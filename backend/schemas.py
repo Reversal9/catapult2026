@@ -63,6 +63,7 @@ class SolarAnalysisResponse(BaseModel):
     suitability_score: float
     suitable: bool
     suitability_reason: str
+    model_source: str  # "habakkuk", "physics-fallback"
 
 
 class DailyGenerationPoint(BaseModel):
@@ -188,4 +189,4 @@ class InfrastructureAnalysisResponse(BaseModel):
     candidates: list[CandidateRegion]
     data_sources: InfrastructureDataSources
     pipeline_notes: list[str]
-    model_source: str  # "random-forest", "physics-fallback"
+    model_source: str  # backend pipeline model identifier, or "physics-fallback"

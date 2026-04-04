@@ -15,6 +15,54 @@ from schemas import AssetAnalysisRequest, Coordinate
 
 
 class AssetAnalysisTests(unittest.TestCase):
+    def test_solar_asset_analysis_uses_packed_project_estimate(self) -> None:
+        request = AssetAnalysisRequest(
+            asset_type="solar",
+            points=[
+                Coordinate(lat=33.0, lon=-112.0),
+                Coordinate(lat=33.0, lon=-111.999),
+                Coordinate(lat=33.001, lon=-111.999),
+                Coordinate(lat=33.001, lon=-112.0),
+            ],
+        )
+
+        class StubPredictor:
+            model_name = "habakkuk"
+
+            def predict(self, **kwargs):
+                return 321_000.0, {
+                    "climate_annual_cloud_cover_pct": 18.0,
+                    "climate_annual_temperature_c": 24.0,
+                }
+
+        with patch(
+            "asset_analysis.fetch_daily_solar_history",
+            return_value=(
+                [
+                    {
+                        "date": "2025-01-01",
+                        "radiation_kwh_m2": 5.0,
+                        "sunshine_seconds": 26000,
+                    },
+                    {
+                        "date": "2025-01-02",
+                        "radiation_kwh_m2": 5.5,
+                        "sunshine_seconds": 28000,
+                    },
+                ],
+                "stub-weather",
+                "2025-01-01",
+                "2025-12-31",
+            ),
+        ), patch("solar_project.get_predictor", return_value=StubPredictor()):
+            result = analyze_asset_polygon(request)
+
+        self.assertEqual(result.asset_type, "solar")
+        self.assertEqual(result.metadata["model_source"], "habakkuk")
+        self.assertGreater(result.asset_count or 0, 0)
+        self.assertEqual(result.estimated_annual_output_kwh, 321_000.0)
+        self.assertEqual(len(result.daily_generation_kwh), 2)
+
     def test_solar_asset_analysis_returns_daily_generation(self) -> None:
         request = AssetAnalysisRequest(
             asset_type="solar",

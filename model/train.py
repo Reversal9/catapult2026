@@ -6,6 +6,8 @@ import datetime
 
 import dataset
 
+dataset.retrieve_data()
+
 train_loader, test_loader = dataset.get_data()
 
 
@@ -64,6 +66,8 @@ def train_one_epoch(epoch_index, tb_writer, model, optimizer, loss_fn):
     return last_loss
 
 def train_loop():
+
+    print("started!")
     model = Habakkuk()
     # loss function and optimizer
     loss_fn = nn.MSELoss()  # mean square error
@@ -77,6 +81,8 @@ def train_loop():
     EPOCHS = 10
 
     best_vloss = 1_000_000.
+
+    print("started!")
 
     for epoch in range(EPOCHS):
         print('EPOCH {}:'.format(epoch_number + 1))
@@ -118,6 +124,3 @@ def train_loop():
         epoch_number += 1
 
         return model
-    
-
-train_loop()

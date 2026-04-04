@@ -1,5 +1,6 @@
 import requests
 from collections import defaultdict
+from datetime import datetime
 
 def get_solar_weather_features():
     features = [
@@ -36,6 +37,8 @@ def get_wind_weather_features():
 
 def get_solar_weather_data(lat, long, date):
 
+    date = date.strftime("%Y-%m-%d")
+
     url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={long}&start_date={date}&end_date={date}&hourly=rain,showers,snowfall,temperature_2m,relative_humidity_2m,cloud_cover,cloud_cover_low,cloud_cover_high,cloud_cover_mid,shortwave_radiation,direct_radiation,diffuse_radiation,global_tilted_irradiance"
 
     response = requests.get(url)
@@ -48,7 +51,9 @@ def get_solar_weather_data(lat, long, date):
     else:
         print(f"Error {response.status_code}: {response.text}")
 
-def get_wind_weather_data(lat, long, data):
+def get_wind_weather_data(lat, long, date):
+
+    date = date.strftime("%Y-%m-%d")
     
     url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={long}&start_date={date}&end_date={date}&hourly=rain,showers,snowfall,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_speed_80m,wind_gusts_10m,wind_direction_10m,wind_direction_80m"
 

@@ -58,36 +58,3 @@ def get_all_generation(eia_ids, years_per_plant=10, chunk_size=None):
     avg_df.to_csv("data/avg_eia_solar_gen.csv", index=False)
 
     return avg_df
-
-def get_solar_weather_features():
-    features = [
-        "rain",
-        "showers",
-        "snowfall",
-        "temperature_2m",
-        "relative_humidity_2m",
-        "cloud_cover",
-        "cloud_cover_low",
-        "cloud_cover_high",
-        "cloud_cover_mid",
-        "shortwave_radiation",
-        "direct_radiation",
-        "diffuse_radiation",
-        "global_tilted_irradiance",
-    ]
-    return features
-
-def get_wind_weather_features():
-    features = [
-        "rain",
-        "showers",
-        "snowfall",
-        "temperature_2m",
-        "relative_humidity_2m",
-        "wind_speed_10m",
-        "wind_speed_80m",
-        "wind_gusts_10m",
-        "wind_direction_10m",
-        "wind_direction_80m",
-    ]
-    return features

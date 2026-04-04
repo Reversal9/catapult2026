@@ -193,6 +193,12 @@ def _build_solar_validity_mask(
     valid_mask = [[False for _ in range(grid_size)] for _ in range(grid_size)]
     subcell_area_m2 = cell["area_m2"] / (grid_size * grid_size)
     usable_area_m2 = 0.0
+    has_live_buildings = bool(buildings)
+    has_live_roads = bool(roads)
+    max_built_ratio = 0.04 if has_live_buildings else 0.16
+    min_road_distance_m = 30.0 if has_live_roads else 0.0
+    max_shadow_ratio = 0.35 if has_live_buildings else 0.58
+    max_impervious_ratio = 0.58 if has_live_buildings else 0.82
 
     for row in range(grid_size):
         for col in range(grid_size):
@@ -221,11 +227,11 @@ def _build_solar_validity_mask(
             slope_deg = cell["slope_deg"]
 
             is_valid = (
-                built_ratio < 0.04
-                and road_distance_m >= 30.0
+                built_ratio < max_built_ratio
+                and road_distance_m >= min_road_distance_m
                 and water_ratio < 0.08
-                and shadow_ratio < 0.35
-                and impervious_ratio < 0.58
+                and shadow_ratio < max_shadow_ratio
+                and impervious_ratio < max_impervious_ratio
                 and slope_deg < 9.5
             )
             valid_mask[row][col] = is_valid

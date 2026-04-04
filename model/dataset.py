@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import random_split
 from torch.utils.data import Dataset, DataLoader
+from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import utils
 
@@ -38,21 +39,28 @@ def process_solar_data():
     final_df = raw_solar_era5_df[DATA_FEATURES + CLIMATE_FEATURES + OUTPUT_FEATURES]
     final_df.to_csv("data/processed/solar.csv", index=False)
 
-def get_data():
-    df = pd.read_csv("data/processed/solar.csv")
+def get_data(path="data/processed/solar.csv", feature_cols=DATA_FEATURES + CLIMATE_FEATURES + OUTPUT_FEATURES, label_col="avg_annual_generation", batch_size=32, train_frac=0.8):
+    
+    df = pd.read_csv(path)
+    
+    df.fillna(0, inplace=True)
+    
     df = df.sample(frac=1).reset_index(drop=True)
+    
+    X = df[feature_cols].values
+    train_size = int(train_frac * len(df))
+    scaler = StandardScaler()
+    scaler.fit(X[:train_size])
+    df[feature_cols] = scaler.transform(X)
 
-    solar_feature_cols = DATA_FEATURES + CLIMATE_FEATURES
-
-    dataset = RenewableDataset(df, solar_feature_cols, "avg_annual_generation")
-    train_size = int(0.8 * len(dataset))
-    test_size  = len(dataset) - train_size
-
+    dataset = RenewableDataset(df, feature_cols, label_col)
+    
     train_dataset = torch.utils.data.Subset(dataset, range(train_size))
-    test_dataset  = torch.utils.data.Subset(dataset, range(test_size, len(dataset)))
-
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=False)
-    test_loader  = DataLoader(test_dataset,  batch_size=32, shuffle=False)
-
-
-    return train_loader, test_loader, len(solar_feature_cols)
+    test_dataset  = torch.utils.data.Subset(dataset, range(train_size, len(dataset)))
+    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    
+    input_size = len(feature_cols)
+    
+    return train_loader, test_loader, input_size

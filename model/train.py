@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 
-import model.random_forest.dataset_random_forest as dataset_random_forest
+import dataset
 
 train_loader, test_loader, ds_size = dataset.get_data()
 
@@ -39,8 +39,7 @@ def train_one_epoch(epoch_index, tb_writer, model, optimizer, loss_fn):
     for inputs, labels in train_loader:
         # Every data instance is an input + label pair
 
-        #### LAST COLUMN IS LABEL
-        
+        print(inputs)
 
         # Zero your gradients for every batch!
         optimizer.zero_grad()
@@ -80,7 +79,6 @@ def train_loop():
     # Initializing in a separate cell so we can easily add more epochs to the same run
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     writer = SummaryWriter('runs/habakkuk_{}'.format(timestamp))
-    epoch_number = 0
 
     EPOCHS = 10
 
@@ -89,11 +87,11 @@ def train_loop():
     print("started!")
 
     for epoch in range(EPOCHS):
-        print('EPOCH {}:'.format(epoch_number + 1))
+        print('EPOCH {}:'.format(epoch + 1))
 
         # Make sure gradient tracking is on, and do a pass over the data
         model.train(True)
-        avg_loss = train_one_epoch(epoch_number, writer, model, optimizer, loss_fn)
+        avg_loss = train_one_epoch(epoch, writer, model, optimizer, loss_fn)
 
 
         running_vloss = 0.0
@@ -116,17 +114,15 @@ def train_loop():
         # for both training and validation
         writer.add_scalars('Training vs. Validation Loss',
                         { 'Training' : avg_loss, 'Validation' : avg_vloss },
-                        epoch_number + 1)
+                        epoch + 1)
         writer.flush()
 
         # Track best performance, and save the model's state
         if avg_vloss < best_vloss:
             best_vloss = avg_vloss
-            model_path = 'model_{}_{}'.format(timestamp, epoch_number)
+            model_path = 'model_{}_{}'.format(timestamp, epoch)
             torch.save(model.state_dict(), model_path)
 
-        epoch_number += 1
-
-        return model
+    return model
     
 train_loop()

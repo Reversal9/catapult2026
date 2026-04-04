@@ -4,7 +4,6 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import dataset
-# import model.random_forest.dataset_random_forest as dataset_random_forest
 
 train_loader, test_loader, ds_size = dataset.get_data()
 
@@ -53,8 +52,7 @@ def train_one_epoch(epoch_index, tb_writer, model, optimizer, loss_fn):
         labels = labels.float()
         # Every data instance is an input + label pair
 
-        #### LAST COLUMN IS LABEL
-        
+        print(inputs)
 
         # Zero your gradients for every batch!
         optimizer.zero_grad()
@@ -84,7 +82,6 @@ def train_loop():
     # Initializing in a separate cell so we can easily add more epochs to the same run
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     writer = SummaryWriter('runs/habakkuk_{}'.format(timestamp))
-    epoch_number = 0
 
     EPOCHS = 10
 
@@ -98,7 +95,7 @@ def train_loop():
 
         # Make sure gradient tracking is on, and do a pass over the data
         model.train(True)
-        avg_loss = train_one_epoch(epoch_number, writer, model, optimizer, loss_fn)
+        avg_loss = train_one_epoch(epoch, writer, model, optimizer, loss_fn)
 
 
         running_vloss = 0.0

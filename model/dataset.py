@@ -167,5 +167,3 @@ def get_wind_data(path, feature_cols, label_col="avg_annual_generation", batch_s
     test_loader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader, len(feature_cols)
-
-process_wind_data()

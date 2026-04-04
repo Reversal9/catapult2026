@@ -6,7 +6,7 @@ from torchmetrics import R2Score
 from dataset import SOLAR_MODEL_FEATURES, WIND_MODEL_FEATURES, get_wind_data
 
 
-torch.manual_seed(17)
+torch.manual_seed(67)
 batch_size = 32
 # train_loader, test_loader, ds_size = get_solar_data("data/processed/solar.csv", SOLAR_MODEL_FEATURES, batch_size=32)
 train_loader, test_loader, ds_size = get_wind_data("data/processed/wind.csv", WIND_MODEL_FEATURES, batch_size=32)

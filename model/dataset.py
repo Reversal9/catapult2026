@@ -1,24 +1,12 @@
 import torch
 from torch.utils.data import random_split
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from scipy.spatial import ConvexHull, QhullError
 from scipy.spatial.distance import pdist
 import numpy as np
 import pandas as pd
-import utils
-
-class RenewableDataset(Dataset):
-    def __init__(self, df, feature_cols, target_col):
-        self.features = torch.tensor(df[feature_cols].values, dtype=torch.float32)
-        self.targets  = torch.tensor(df[target_col].values,  dtype=torch.float32).unsqueeze(1)
-
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        return self.features[idx], self.targets[idx]
 
 SOLAR_CLIMATE_FEATURES = ["climate_annual_temperature_c", "climate_annual_relative_humidity_pct", "climate_annual_total_precipitation_mm", "climate_total_total_precipitation_mm", "climate_annual_snowfall_mm", "climate_total_snowfall_mm", "climate_annual_cloud_cover_pct", "era5_distance_km"]
 SOLAR_DATA_FEATURES = ["p_area", "p_tilt", "p_azimuth"]
@@ -87,15 +75,15 @@ def process_wind_data():
     )
 
     aggregated_df = aggregated_df.merge(area_df, on='eia_id', how='left')
-    eia_ids = aggregated_df["eia_id"].tolist()
-
+    
+    # eia_ids = aggregated_df["eia_id"].tolist()
     #avg_generation_df = utils.get_all_generation(eia_ids, "wind")
     avg_generation_df = pd.read_csv("data/avg_eia_wind_gen.csv")
 
     aggregated_df = aggregated_df.merge(avg_generation_df, left_on="eia_id", right_on="plantCode", how="left")
 
     #Final DF - Input + Output features
-    final_df = aggregated_df[WIND_MODEL_FEATURES + WIND_OUTPUT_FEATURES]
+    final_df = aggregated_df[WIND_MODEL_FEATURES + WIND_OUTPUT_FEATURES + ["area", "num_turbines"]]
     final_df.to_csv("data/processed/wind.csv", index=False)
 
 def get_data(path, feature_cols, label_col="avg_annual_generation", batch_size=32, train_frac=0.8):

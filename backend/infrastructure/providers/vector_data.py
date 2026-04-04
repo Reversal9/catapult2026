@@ -41,7 +41,7 @@ out geom;
             ).decode("utf-8")
         )
     except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as error:
-        return [], [], "osm-overpass-fallback", [
+        return [], [], [], "osm-overpass-fallback", [
             f"OpenStreetMap vectors could not be retrieved ({error.__class__.__name__}); built/access features used deterministic fallbacks.",
         ]
 

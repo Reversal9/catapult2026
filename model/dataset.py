@@ -133,6 +133,7 @@ def get_wind_data(path, feature_cols, label_col="avg_annual_generation", batch_s
 
     df = pd.read_csv(path)
 
+    df = df[df[label_col].notna() & (df[label_col] > 0)].reset_index(drop=True) #delete not na
     df[feature_cols] = df[feature_cols].astype(float)
 
     df = df.sample(frac=1).reset_index(drop=True)

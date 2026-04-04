@@ -14,7 +14,7 @@ SOLAR_OUTPUT_FEATURES = ["avg_annual_generation"]
 SOLAR_MODEL_FEATURES = SOLAR_DATA_FEATURES + SOLAR_CLIMATE_FEATURES
 
 WIND_CLIMATE_FEATURES = ["climate_annual_temperature_c", "climate_annual_relative_humidity_pct", "climate_annual_total_precipitation_mm", "climate_total_total_precipitation_mm", "climate_annual_snowfall_mm", "climate_total_snowfall_mm", "climate_annual_cloud_cover_pct", "climate_annual_windspeed_m_s", "climate_install_month_windspeed_m_s"]
-WIND_DATA_FEATURES = []
+WIND_DATA_FEATURES = ["t_cap", "t_hh", "t_rd", "t_rsa", "t_ttlh"]
 WIND_OUTPUT_FEATURES = ["avg_annual_generation"]
 WIND_MODEL_FEATURES = WIND_DATA_FEATURES + WIND_CLIMATE_FEATURES
 
@@ -128,3 +128,5 @@ def get_data(path, feature_cols, label_col="avg_annual_generation", batch_size=3
     test_loader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader, len(feature_cols)
+
+process_wind_data()

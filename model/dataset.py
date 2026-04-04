@@ -33,7 +33,6 @@ def process_solar_data():
     avg_generation_df = pd.read_csv("data/avg_eia_solar_gen.csv") # Maybe in future change to live solar
 
     raw_solar_era5_df = raw_solar_era5_df.merge(avg_generation_df, left_on="eia_id", right_on="plantCode", how="left")
-    print(raw_solar_era5_df)
 
     #Final DF - Input + Output features
     final_df = raw_solar_era5_df[DATA_FEATURES + CLIMATE_FEATURES + OUTPUT_FEATURES]
@@ -57,5 +56,3 @@ def get_data():
 
 
     return train_loader, test_loader, len(solar_feature_cols)
-
-process_solar_data()

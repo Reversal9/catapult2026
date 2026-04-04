@@ -2,13 +2,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
-import datetime
+from datetime import datetime
 
 import model.random_forest.dataset_random_forest as dataset_random_forest
 
-dataset_random_forest.retrieve_data()
-
-train_loader, test_loader = dataset_random_forest.get_data()
+train_loader, test_loader, ds_size = dataset.get_data()
 
 
 import torch.nn as nn
@@ -16,9 +14,9 @@ import torch.nn.functional as F
 
 # PyTorch models inherit from torch.nn.Module
 class Habakkuk(nn.Module):
-    def __init__(self):
+    def __init__(self, input_size):
         super(Habakkuk, self).__init__()
-        self.fc1 = nn.Linear(16, 24)
+        self.fc1 = nn.Linear(input_size, 24)
         self.fc2 = nn.Linear(24, 12)
         self.fc3 = nn.Linear(12, 6)
         self.fc4 = nn.Linear(6, 1)
@@ -37,9 +35,12 @@ def train_one_epoch(epoch_index, tb_writer, model, optimizer, loss_fn):
     # Here, we use enumerate(training_loader) instead of
     # iter(training_loader) so that we can track the batch
     # index and do some intra-epoch reporting
-    for i, data in enumerate(train_loader):
+    i = 0
+    for inputs, labels in train_loader:
         # Every data instance is an input + label pair
-        inputs, labels = data
+
+        #### LAST COLUMN IS LABEL
+        
 
         # Zero your gradients for every batch!
         optimizer.zero_grad()
@@ -62,13 +63,16 @@ def train_one_epoch(epoch_index, tb_writer, model, optimizer, loss_fn):
             tb_x = epoch_index * len(train_loader) + i + 1
             tb_writer.add_scalar('Loss/train', last_loss, tb_x)
             running_loss = 0.
+        i+=1
 
     return last_loss
 
 def train_loop():
 
-    print("started!")
-    model = Habakkuk()
+    print("Habakkuk!")
+    print(ds_size)
+
+    model = Habakkuk(ds_size)
     # loss function and optimizer
     loss_fn = nn.MSELoss()  # mean square error
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
@@ -124,3 +128,5 @@ def train_loop():
         epoch_number += 1
 
         return model
+    
+train_loop()

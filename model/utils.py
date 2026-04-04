@@ -51,7 +51,7 @@ def get_solar_weather_data(lat, long, date):
     else:
         print(f"Error {response.status_code}: {response.text}")
 
-def get_wind_weather_data(lat, long, data):
+def get_wind_weather_data(lat, long, date):
 
     date = date.strftime("%Y-%m-%d")
     

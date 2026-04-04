@@ -4,8 +4,9 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import datetime
 
-import dataset as dataset
-import utils as utils
+import dataset
+
+dataset.retrieve_data()
 
 train_loader, test_loader = dataset.get_data()
 

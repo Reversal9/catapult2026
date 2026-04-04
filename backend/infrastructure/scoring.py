@@ -190,54 +190,81 @@ def _build_solar_validity_mask(
     roads: list[RoadFeature],
     grid_size: int = 8,
 ) -> tuple[list[list[Coordinate]], list[float], float]:
-    valid_mask = [[False for _ in range(grid_size)] for _ in range(grid_size)]
     subcell_area_m2 = cell["area_m2"] / (grid_size * grid_size)
-    usable_area_m2 = 0.0
     has_live_buildings = bool(buildings)
     has_live_roads = bool(roads)
     sparse_live_roads = len(roads) <= 5
-    max_built_ratio = 0.04 if has_live_buildings else 0.16
-    min_road_distance_m = 12.0 if has_live_roads and sparse_live_roads else (30.0 if has_live_roads else 0.0)
-    max_shadow_ratio = 0.35 if has_live_buildings else 0.68
-    max_impervious_ratio = 0.58 if has_live_buildings else 0.9
+    base_min_road_distance_m = (
+        12.0 if has_live_roads and sparse_live_roads else (30.0 if has_live_roads else 0.0)
+    )
 
-    for row in range(grid_size):
-        for col in range(grid_size):
-            sub_bbox = _subcell_bbox(cell["bbox"], row, col, grid_size)
-            center = Coordinate(
-                lat=(sub_bbox.min_lat + sub_bbox.max_lat) / 2.0,
-                lon=(sub_bbox.min_lon + sub_bbox.max_lon) / 2.0,
-            )
-            feature_seed = {
-                "center_lat": center.lat,
-                "center_lon": center.lon,
-            }
-            landcover = (
-                sample_imagery_features(imagery, sub_bbox) if imagery else None
-            ) or proxy_landcover(feature_seed)
-            building_area_m2 = sum(
-                overlap_building_area_m2(sub_bbox, building) for building in buildings
-            )
-            built_ratio = clamp(building_area_m2 / max(subcell_area_m2, 1.0), 0.0, 1.0)
-            road_distance_m = (
-                nearest_road_distance_m(center, roads) if roads else 9999.0
-            )
-            water_ratio = clamp(landcover.get("water_ratio", 0.0), 0.0, 1.0)
-            shadow_ratio = clamp(landcover.get("shadow_ratio", 0.0), 0.0, 1.0)
-            impervious_ratio = clamp(landcover.get("impervious_ratio", 0.0), 0.0, 1.0)
-            slope_deg = cell["slope_deg"]
+    def build_mask(
+        *,
+        max_built_ratio: float,
+        min_road_distance_m: float,
+        max_water_ratio: float,
+        max_shadow_ratio: float,
+        max_impervious_ratio: float,
+        max_slope_deg: float,
+    ) -> tuple[list[list[bool]], float]:
+        valid_mask = [[False for _ in range(grid_size)] for _ in range(grid_size)]
+        usable_area_m2 = 0.0
+        for row in range(grid_size):
+            for col in range(grid_size):
+                sub_bbox = _subcell_bbox(cell["bbox"], row, col, grid_size)
+                center = Coordinate(
+                    lat=(sub_bbox.min_lat + sub_bbox.max_lat) / 2.0,
+                    lon=(sub_bbox.min_lon + sub_bbox.max_lon) / 2.0,
+                )
+                feature_seed = {
+                    "center_lat": center.lat,
+                    "center_lon": center.lon,
+                }
+                landcover = (
+                    sample_imagery_features(imagery, sub_bbox) if imagery else None
+                ) or proxy_landcover(feature_seed)
+                building_area_m2 = sum(
+                    overlap_building_area_m2(sub_bbox, building) for building in buildings
+                )
+                built_ratio = clamp(building_area_m2 / max(subcell_area_m2, 1.0), 0.0, 1.0)
+                road_distance_m = (
+                    nearest_road_distance_m(center, roads) if roads else 9999.0
+                )
+                water_ratio = clamp(landcover.get("water_ratio", 0.0), 0.0, 1.0)
+                shadow_ratio = clamp(landcover.get("shadow_ratio", 0.0), 0.0, 1.0)
+                impervious_ratio = clamp(landcover.get("impervious_ratio", 0.0), 0.0, 1.0)
 
-            is_valid = (
-                built_ratio < max_built_ratio
-                and road_distance_m >= min_road_distance_m
-                and water_ratio < 0.08
-                and shadow_ratio < max_shadow_ratio
-                and impervious_ratio < max_impervious_ratio
-                and slope_deg < 9.5
-            )
-            valid_mask[row][col] = is_valid
-            if is_valid:
-                usable_area_m2 += subcell_area_m2
+                is_valid = (
+                    built_ratio < max_built_ratio
+                    and road_distance_m >= min_road_distance_m
+                    and water_ratio < max_water_ratio
+                    and shadow_ratio < max_shadow_ratio
+                    and impervious_ratio < max_impervious_ratio
+                    and cell["slope_deg"] < max_slope_deg
+                )
+                valid_mask[row][col] = is_valid
+                if is_valid:
+                    usable_area_m2 += subcell_area_m2
+        return valid_mask, usable_area_m2
+
+    valid_mask, usable_area_m2 = build_mask(
+        max_built_ratio=0.04 if has_live_buildings else 0.16,
+        min_road_distance_m=base_min_road_distance_m,
+        max_water_ratio=0.08,
+        max_shadow_ratio=0.35 if has_live_buildings else 0.68,
+        max_impervious_ratio=0.58 if has_live_buildings else 0.9,
+        max_slope_deg=9.5,
+    )
+
+    if not has_live_buildings and not has_live_roads and usable_area_m2 < max(600.0, cell["area_m2"] * 0.1):
+        valid_mask, usable_area_m2 = build_mask(
+            max_built_ratio=0.28,
+            min_road_distance_m=0.0,
+            max_water_ratio=0.12,
+            max_shadow_ratio=0.82,
+            max_impervious_ratio=0.98,
+            max_slope_deg=11.0,
+        )
 
     valid_region_polygons, valid_region_areas_m2 = _merge_valid_subcells(
         cell,

@@ -24,7 +24,7 @@ from pathlib import Path
 OUTPUT_DIR = Path(__file__).resolve().parents[1] / "output"
 
 from .models import PanelSpec
-from .sources import enfsolar, pdf as pdf_source, html_generic
+from .sources import nrel_cec, pdf as pdf_source, html_generic, playwright_scraper
 
 
 # ---------------------------------------------------------------------------
@@ -88,53 +88,78 @@ def _populate(spec: PanelSpec, data: dict) -> None:
 def scrape_panel(model: str, verbose: bool = True) -> PanelSpec:
     """
     Run the full scraping pipeline for a single panel model string.
-    Source priority: ENF Solar → PDF datasheet → generic HTML.
+
+    Source priority:
+      1. NREL CEC Module Database (local CSV, 20k+ panels, no HTTP)
+      2. Playwright browser (JS-rendered sites — Bing, ENF Solar, manufacturer)
+      3. PDF datasheet (static HTTP, manufacturer PDFs)
+      4. Generic HTML (static HTTP, last resort)
     """
     spec = PanelSpec(model=model)
     data: dict | None = None
     url: str | None = None
     source_type: str = "unknown"
 
-    # 1 — ENF Solar (structured tables, most reliable for specs)
+    n_sources = 4 if playwright_scraper.available() else 3
+    step = 0
+
     if verbose:
         print(f"\n[scraper] {model}")
-        print("  [1/3] ENF Solar...")
-    data, url = enfsolar.fetch(model)
-    if data:
-        source_type = "enfsolar"
 
-    # 2 — PDF datasheet
-    if not data or not _has_core_fields(data):
+    # 1 — NREL CEC database (offline lookup, most reliable for electrical specs)
+    step += 1
+    if verbose:
+        print(f"  [{step}/{n_sources}] NREL CEC database...")
+    data, url = nrel_cec.fetch(model)
+    if data:
+        source_type = "nrel_cec"
+
+    # 2 — Playwright (headless Chromium, handles JS-rendered sites)
+    if playwright_scraper.available() and (not data or not _has_core_fields(data)):
+        step += 1
         if verbose:
-            print("  [2/3] PDF datasheet...")
+            print(f"  [{step}/{n_sources}] Playwright browser...")
+        pw_data, pw_url = playwright_scraper.fetch(model)
+        if pw_data:
+            data = _merge(data, pw_data) if data else pw_data
+            if not url:
+                url, source_type = pw_url, "playwright"
+
+    # 3 — PDF datasheet (static HTTP)
+    if not data or not _has_core_fields(data):
+        step += 1
+        if verbose:
+            print(f"  [{step}/{n_sources}] PDF datasheet...")
         pdf_data, pdf_url = pdf_source.fetch(model)
         if pdf_data:
-            if data:
-                data = _merge(data, pdf_data)   # fill gaps from PDF
-            else:
-                data, url, source_type = pdf_data, pdf_url, "pdf_datasheet"
+            data = _merge(data, pdf_data) if data else pdf_data
+            if not url:
+                url, source_type = pdf_url, "pdf_datasheet"
 
-    # 3 — Generic HTML page
+    # 4 — Generic HTML (static HTTP, last resort)
     if not data or not _has_core_fields(data):
+        step += 1
         if verbose:
-            print("  [3/3] Generic HTML...")
+            print(f"  [{step}/{n_sources}] Generic HTML...")
         html_data, html_url = html_generic.fetch(model)
         if html_data:
-            if data:
-                data = _merge(data, html_data)
-            else:
-                data, url, source_type = html_data, html_url, "html_page"
+            data = _merge(data, html_data) if data else html_data
+            if not url:
+                url, source_type = html_url, "html_page"
 
     if not data:
         if verbose:
             print("  [!] No specs found.")
         return spec
 
-    # Price — run a dedicated retailer search if price not yet found
+    # Price — dedicated search if not already found
     if not data.get("price_usd"):
         if verbose:
             print("  [+] Searching for price...")
-        price, ppw, _ = html_generic.fetch_price(model)
+        if playwright_scraper.available():
+            price, ppw, _ = playwright_scraper.fetch_price(model)
+        else:
+            price, ppw, _ = html_generic.fetch_price(model)
         if price:
             data["price_usd"] = price
             data["price_per_watt_usd"] = ppw

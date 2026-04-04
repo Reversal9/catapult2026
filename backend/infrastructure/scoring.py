@@ -402,8 +402,20 @@ def evaluate_solar_candidate(
         roads=roads,
     )
     min_usable_area_m2 = max(600.0, min(2_500.0, cell["area_m2"] * 0.1))
+    validity_source = "mask"
     if usable_solar_area < min_usable_area_m2:
-        return None, "low_usable_area"
+        fallback_open_area = clamp(
+            cell["open_land_area_m2"] * cell.get("unobstructed_ratio", 1.0),
+            0.0,
+            cell["area_m2"],
+        )
+        if fallback_open_area >= min_usable_area_m2:
+            usable_solar_area = fallback_open_area
+            valid_region_polygons = [cell["polygon"]]
+            valid_region_areas_m2 = [usable_solar_area]
+            validity_source = "open_land_fallback"
+        else:
+            return None, "low_usable_area"
 
     estimate = analyze_solar_project(
         SolarProjectInputs(
@@ -462,11 +474,15 @@ def evaluate_solar_candidate(
         polygon=valid_region_polygons[0] if valid_region_polygons else cell["polygon"],
         area_m2=round(usable_solar_area, 2),
         feasibility_score=score,
-        reasoning=[
-            "Building footprints and segmented open land define a usable solar build envelope in this cell.",
-            estimate.suitability_reason,
-            "Slope, vegetation, and shading remain in a practical range for a packed solar layout.",
-        ],
+    reasoning=[
+        "Building footprints and segmented open land define a usable solar build envelope in this cell.",
+        estimate.suitability_reason,
+        "Slope, vegetation, and shading remain in a practical range for a packed solar layout.",
+    ] + (
+        ["The usable area comes from the open-land fallback."]
+        if validity_source == "open_land_fallback"
+        else []
+    ),
         estimated_annual_output_kwh=round(estimate.estimated_annual_output_kwh, 2),
         estimated_installation_cost_usd=round(estimate.cost.total_project_cost_usd, 2),
         metadata={
@@ -489,6 +505,7 @@ def evaluate_solar_candidate(
             "vegetation_ratio": round(cell["vegetation_ratio"], 3),
             "water_ratio": round(cell["water_ratio"], 3),
             "slope_deg": round(cell["slope_deg"], 2),
+            "validity_source": validity_source,
         },
     ), None
 

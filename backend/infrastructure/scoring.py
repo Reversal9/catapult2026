@@ -195,10 +195,11 @@ def _build_solar_validity_mask(
     usable_area_m2 = 0.0
     has_live_buildings = bool(buildings)
     has_live_roads = bool(roads)
+    sparse_live_roads = len(roads) <= 5
     max_built_ratio = 0.04 if has_live_buildings else 0.16
-    min_road_distance_m = 30.0 if has_live_roads else 0.0
-    max_shadow_ratio = 0.35 if has_live_buildings else 0.58
-    max_impervious_ratio = 0.58 if has_live_buildings else 0.82
+    min_road_distance_m = 12.0 if has_live_roads and sparse_live_roads else (30.0 if has_live_roads else 0.0)
+    max_shadow_ratio = 0.35 if has_live_buildings else 0.68
+    max_impervious_ratio = 0.58 if has_live_buildings else 0.9
 
     for row in range(grid_size):
         for col in range(grid_size):
@@ -373,7 +374,7 @@ def evaluate_solar_candidate(
         buildings=buildings,
         roads=roads,
     )
-    min_usable_area_m2 = max(900.0, min(2_500.0, cell["area_m2"] * 0.12))
+    min_usable_area_m2 = max(600.0, min(2_500.0, cell["area_m2"] * 0.1))
     if usable_solar_area < min_usable_area_m2:
         return None, "low_usable_area"
 

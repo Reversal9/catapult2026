@@ -367,7 +367,8 @@ def evaluate_solar_candidate(
         buildings=buildings,
         roads=roads,
     )
-    if usable_solar_area < 2_500:
+    min_usable_area_m2 = max(900.0, min(2_500.0, cell["area_m2"] * 0.12))
+    if usable_solar_area < min_usable_area_m2:
         return None, "low_usable_area"
 
     estimate = analyze_solar_project(

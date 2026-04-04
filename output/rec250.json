@@ -1,0 +1,27 @@
+{
+  "model": "REC Solar REC250PE-BLK",
+  "dimensions_mm": {
+    "length_mm": null,
+    "width_mm": null,
+    "depth_mm": null
+  },
+  "weight_kg": null,
+  "power_stc_w": null,
+  "efficiency_pct": null,
+  "voc_v": null,
+  "vmp_v": null,
+  "isc_a": null,
+  "imp_a": null,
+  "temp_coeff_pmax_pct_per_c": null,
+  "operating_temp_c": {
+    "min_c": null,
+    "max_c": null
+  },
+  "max_system_voltage_v": null,
+  "certifications": [],
+  "price_usd": null,
+  "price_per_watt_usd": null,
+  "source_url": null,
+  "source_type": null,
+  "confidence": "low"
+}

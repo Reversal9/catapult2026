@@ -16,6 +16,8 @@ const CANDIDATE_COLORS = {
   solar: {
     stroke: "#b42318",
     fill: "#ef4444",
+    packingStroke: "#7f1d1d",
+    packingFill: "#dc2626",
   },
   wind: {
     stroke: "#2d83b7",
@@ -122,21 +124,45 @@ function MapScene({
             const colors = CANDIDATE_COLORS[candidate.useType];
             const isSelected = candidate.id === selectedCandidateId;
             return (
-              <Polygon
-                key={candidate.id}
-                positions={candidate.polygon}
-                eventHandlers={{
-                  click: () => onSelectCandidate(candidate.id),
-                }}
-                pathOptions={{
-                  color: colors.stroke,
-                  weight: isSelected ? 3 : 1.6,
-                  fillColor: colors.fill,
-                  fillOpacity: isSelected
-                    ? 0.34
-                    : 0.1 + Math.min(candidate.feasibilityScore / 100, 0.22),
-                }}
-              />
+              <React.Fragment key={candidate.id}>
+                {(candidate.validRegionPolygons ?? [candidate.polygon]).map(
+                  (polygon, polygonIndex) => (
+                    <Polygon
+                      key={`${candidate.id}-valid-${polygonIndex}`}
+                      positions={polygon}
+                      eventHandlers={{
+                        click: () => onSelectCandidate(candidate.id),
+                      }}
+                      pathOptions={{
+                        color: colors.stroke,
+                        weight: isSelected ? 3 : 1.6,
+                        fillColor: colors.fill,
+                        fillOpacity: isSelected
+                          ? 0.34
+                          : 0.1 + Math.min(candidate.feasibilityScore / 100, 0.22),
+                      }}
+                    />
+                  ),
+                )}
+                {candidate.useType === "solar" &&
+                  (candidate.packingBlockPolygons ?? []).map(
+                    (polygon, polygonIndex) => (
+                      <Polygon
+                        key={`${candidate.id}-packing-${polygonIndex}`}
+                        positions={polygon}
+                        eventHandlers={{
+                          click: () => onSelectCandidate(candidate.id),
+                        }}
+                        pathOptions={{
+                          color: colors.packingStroke,
+                          weight: isSelected ? 1.6 : 1.1,
+                          fillColor: colors.packingFill,
+                          fillOpacity: isSelected ? 0.36 : 0.22,
+                        }}
+                      />
+                    ),
+                  )}
+              </React.Fragment>
             );
           })}
 

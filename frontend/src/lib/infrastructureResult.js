@@ -9,11 +9,19 @@ export const titleCaseUseType = (value) =>
 export const mapInfrastructureResult = (payload, settings) => {
   const candidates = payload.candidates.map((candidate) => {
     const polygon = candidate.polygon.map((point) => [point.lat, point.lon]);
+    const validRegionPolygons = (
+      candidate.metadata?.valid_region_polygons ?? [candidate.polygon]
+    ).map((poly) => poly.map((point) => [point.lat, point.lon]));
+    const packingBlockPolygons = (
+      candidate.metadata?.packing_block_polygons ?? []
+    ).map((poly) => poly.map((point) => [point.lat, point.lon]));
     return {
       id: candidate.id,
       useType: candidate.use_type,
       useLabel: titleCaseUseType(candidate.use_type),
       polygon,
+      validRegionPolygons,
+      packingBlockPolygons,
       center: regionCenter({ type: "polygon", points: polygon }),
       areaKm2: candidate.area_m2 / 1_000_000,
       feasibilityScore: candidate.feasibility_score,
@@ -42,11 +50,19 @@ export const mapInfrastructureResult = (payload, settings) => {
 export const mapSolarSitingResult = (payload, settings, config) => {
   const allCandidates = payload.candidates.map((candidate) => {
     const polygon = candidate.polygon.map((point) => [point.lat, point.lon]);
+    const validRegionPolygons = (
+      candidate.metadata?.valid_region_polygons ?? [candidate.polygon]
+    ).map((poly) => poly.map((point) => [point.lat, point.lon]));
+    const packingBlockPolygons = (
+      candidate.metadata?.packing_block_polygons ?? []
+    ).map((poly) => poly.map((point) => [point.lat, point.lon]));
     return {
       id: candidate.id,
       useType: candidate.use_type,
       useLabel: titleCaseUseType(candidate.use_type),
       polygon,
+      validRegionPolygons,
+      packingBlockPolygons,
       center: regionCenter({ type: "polygon", points: polygon }),
       areaKm2: candidate.area_m2 / 1_000_000,
       feasibilityScore: candidate.feasibility_score,

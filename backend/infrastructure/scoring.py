@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from schemas import (
+    BoundingBox,
     CandidateRegion,
     Coordinate,
     DEFAULT_PANEL_AZIMUTH_DEG,
@@ -12,6 +13,124 @@ from solar_project import SolarProjectInputs, analyze_solar_project
 from .common import clamp, pseudo, solar_irradiance_proxy, wind_speed_proxy
 from .grid import nearest_road_distance_m, overlap_building_area_m2
 from .models import BuildingFootprint, RoadFeature
+
+
+def _rect_polygon(
+    bbox: BoundingBox,
+    min_x: float,
+    min_y: float,
+    max_x: float,
+    max_y: float,
+) -> list[Coordinate]:
+    lon_span = bbox.max_lon - bbox.min_lon
+    lat_span = bbox.max_lat - bbox.min_lat
+    return [
+        Coordinate(
+            lat=bbox.min_lat + lat_span * min_y,
+            lon=bbox.min_lon + lon_span * min_x,
+        ),
+        Coordinate(
+            lat=bbox.min_lat + lat_span * min_y,
+            lon=bbox.min_lon + lon_span * max_x,
+        ),
+        Coordinate(
+            lat=bbox.min_lat + lat_span * max_y,
+            lon=bbox.min_lon + lon_span * max_x,
+        ),
+        Coordinate(
+            lat=bbox.min_lat + lat_span * max_y,
+            lon=bbox.min_lon + lon_span * min_x,
+        ),
+    ]
+
+
+def _build_visual_solar_layout(
+    cell: dict,
+    usable_ground_area_m2: float,
+    usable_solar_area_m2: float,
+    packed_usable_area_m2: float,
+) -> tuple[list[list[Coordinate]], list[list[Coordinate]]]:
+    cell_area_m2 = max(cell["area_m2"], 1.0)
+    rooftop_ratio = clamp(cell["rooftop_area_m2"] / cell_area_m2, 0.0, 0.35)
+    ground_ratio = clamp((0.5 * usable_ground_area_m2) / cell_area_m2, 0.0, 0.85)
+
+    valid_regions: list[list[Coordinate]] = []
+
+    if rooftop_ratio > 0.02:
+        rooftop_height = 0.16
+        rooftop_width = clamp(rooftop_ratio / rooftop_height, 0.18, 0.88)
+        valid_regions.append(
+            _rect_polygon(
+                cell["bbox"],
+                0.06,
+                0.78,
+                0.06 + rooftop_width,
+                0.78 + rooftop_height,
+            )
+        )
+
+    if ground_ratio > 0.03:
+        ground_height = clamp(0.36 + ground_ratio * 0.25, 0.32, 0.74)
+        ground_width = clamp(ground_ratio / max(ground_height, 0.2), 0.18, 0.88)
+        valid_regions.append(
+            _rect_polygon(
+                cell["bbox"],
+                0.08,
+                0.08,
+                0.08 + ground_width,
+                0.08 + ground_height,
+            )
+        )
+
+    if not valid_regions and usable_solar_area_m2 > 0:
+        ratio = clamp(usable_solar_area_m2 / cell_area_m2, 0.05, 0.85)
+        side = clamp(ratio**0.5, 0.24, 0.9)
+        margin_x = (1.0 - side) / 2.0
+        margin_y = (1.0 - side) / 2.0
+        valid_regions.append(
+            _rect_polygon(
+                cell["bbox"],
+                margin_x,
+                margin_y,
+                margin_x + side,
+                margin_y + side,
+            )
+        )
+
+    packing_blocks: list[list[Coordinate]] = []
+    packed_ratio = clamp(
+        packed_usable_area_m2 / max(usable_solar_area_m2, 1.0),
+        0.0,
+        1.0,
+    )
+    for region_index, region in enumerate(valid_regions):
+        region_bbox = BoundingBox(
+            min_lat=min(point.lat for point in region),
+            min_lon=min(point.lon for point in region),
+            max_lat=max(point.lat for point in region),
+            max_lon=max(point.lon for point in region),
+        )
+        cols = 3 if region_index == 0 else 2
+        rows = 2
+        block_margin_x = 0.08
+        block_margin_y = 0.12
+        usable_width = 1.0 - (block_margin_x * 2)
+        usable_height = max(0.2, packed_ratio * 0.72)
+        block_width = usable_width / cols
+        block_height = usable_height / rows
+        start_y = 0.12
+
+        for row in range(rows):
+            for col in range(cols):
+                x0 = block_margin_x + col * block_width
+                y0 = start_y + row * block_height
+                x1 = x0 + block_width * 0.82
+                y1 = y0 + block_height * 0.72
+                packing_blocks.append(
+                    _rect_polygon(region_bbox, x0, y0, x1, y1)
+                )
+
+    return valid_regions, packing_blocks
 
 
 def enrich_cells(
@@ -172,10 +291,17 @@ def evaluate_solar_candidate(
     if score < 48:
         return None, "low_score"
 
+    valid_region_polygons, packing_block_polygons = _build_visual_solar_layout(
+        cell=cell,
+        usable_ground_area_m2=usable_ground_area,
+        usable_solar_area_m2=usable_solar_area,
+        packed_usable_area_m2=estimate.layout.usable_area_m2,
+    )
+
     return CandidateRegion(
         id=f"solar-{idx}",
         use_type="solar",
-        polygon=cell["polygon"],
+        polygon=valid_region_polygons[0] if valid_region_polygons else cell["polygon"],
         area_m2=round(usable_solar_area, 2),
         feasibility_score=score,
         reasoning=[
@@ -193,6 +319,14 @@ def evaluate_solar_candidate(
             "irradiance_kwh_m2_yr": round(irradiance, 2),
             "usable_solar_area_m2": round(usable_solar_area, 2),
             "packed_usable_area_m2": round(estimate.layout.usable_area_m2, 2),
+            "valid_region_polygons": [
+                [point.model_dump() for point in polygon]
+                for polygon in valid_region_polygons
+            ],
+            "packing_block_polygons": [
+                [point.model_dump() for point in polygon]
+                for polygon in packing_block_polygons
+            ],
             "building_coverage_ratio": round(cell["built_ratio"], 3),
             "vegetation_ratio": round(cell["vegetation_ratio"], 3),
             "water_ratio": round(cell["water_ratio"], 3),

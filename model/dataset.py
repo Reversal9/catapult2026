@@ -24,21 +24,27 @@ def process_solar_data():
 
     final_df = None
 
-
+    CLIMATE_FEATURES = ""
     DATA_FEATURES = ["p_area", "p_tilt", "p_azimuth"]
     ORIG_SOLAR_COLS =  DATA_FEATURES + ["ylat", "xlong", "p_img_date", "eia_id"]
 
-    raw_solar_df = pd.read_csv("data/solar_with_climate.csv")
+    raw_solar_df = pd.read_csv("data/solar.csv")
     raw_solar_era5_df = pd.read_csv("data/solar_with_era5_climate.csv")
 
-    cols_not_in_list = [col for col in raw_solar_df.columns if col not in DATA_FEATURES]
+    cols_not_in_list = [col for col in raw_solar_df.columns if col not in ORIG_SOLAR_COLS]
     raw_solar_era5_df = raw_solar_era5_df.drop(columns=cols_not_in_list)
 
     eia_ids = raw_solar_era5_df["eia_id"].dropna().unique().tolist()
-    avg_generation_df = utils.get_all_generation(eia_ids)
+
+    # avg_generation_df = utils.get_all_generation(eia_ids)
+    avg_generation_df = pd.read_csv("data/avg_eia_solar_gen.csv")
 
     raw_solar_era5_df = raw_solar_era5_df.merge(avg_generation_df, left_on="eia_id", right_on="plantCode", how="left")
 
+    raw_solar_era5_df[[]]
+
+    training_df = raw_solar_era5_df
+    print(raw_solar_era5_df)
     
 
 def get_data():

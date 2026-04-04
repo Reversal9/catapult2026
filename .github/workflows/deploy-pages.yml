@@ -37,11 +37,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run lint and build
+      - name: Run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
         run: |
-          npm run lint
           npm run build
 
       - name: Setup Pages

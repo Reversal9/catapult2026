@@ -1,182 +1,136 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  Circle,
-  MapContainer,
-  Marker,
-  Polygon,
-  Polyline,
-  Popup,
-  TileLayer,
-  useMapEvents,
-} from "react-leaflet";
-import L from "leaflet";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
-import { analyzeSolarRegion } from "./lib/solarAnalysisApi";
+import { analyzeAssetRegion } from "./lib/assetAnalysisApi";
+import ControlPanel from "./components/ControlPanel";
+import LandingOverlay from "./components/LandingOverlay";
+import MapScene from "./components/MapScene";
+import TopBar from "./components/TopBar";
+import TrendModal from "./components/TrendModal";
+import { ASSET_PRESETS } from "./constants/models";
+import { analyzeInfrastructureRegion } from "./lib/infrastructureAnalysisApi";
+import { mapAssetResult } from "./lib/assetResult";
+import { mapInfrastructureResult } from "./lib/infrastructureResult";
+import {
+  clamp,
+  haversineMeters,
+  normLng,
+  rectangleFromTwoPoints,
+  regionCenter,
+} from "./utils/geo";
+import { formatDmsPair, parseDmsPair } from "./utils/dms";
 
-const SOLAR_MODELS = [
-  "SunForge SF-450",
-  "HelioMax HX-620",
-  "Atlas Bifacial AB-700",
-];
-const WIND_MODELS = ["AeroSpin 2MW", "VentoCore 3.5MW", "SkyGrid 5MW"];
+const defaultSpec = (assetType) =>
+  structuredClone(ASSET_PRESETS[assetType]?.[0]?.spec ?? {});
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const normLng = (lng) => {
-  let value = lng;
-  while (value > 180) value -= 360;
-  while (value < -180) value += 360;
-  return value;
-};
-
-const DMS_RE =
-  /^\s*(\d{1,3})[°\s]+(\d{1,2})['\s]+(\d{1,2}(?:\.\d+)?)"?\s*([NnSs])\s+(\d{1,3})[°\s]+(\d{1,2})['\s]+(\d{1,2}(?:\.\d+)?)"?\s*([EeWw])\s*$/;
-
-const toDmsPart = (raw, isLat) => {
-  const value = Math.abs(raw);
-  const deg = Math.floor(value);
-  const minsFull = (value - deg) * 60;
-  const min = Math.floor(minsFull);
-  const sec = (minsFull - min) * 60;
-  const hemi = isLat ? (raw >= 0 ? "N" : "S") : raw >= 0 ? "E" : "W";
-  return `${deg}°${String(min).padStart(2, "0")}'${sec.toFixed(1)}"${hemi}`;
-};
-
-const formatDmsPair = ({ lat, lng }) =>
-  `${toDmsPart(lat, true)} ${toDmsPart(lng, false)}`;
-
-const parseDmsPair = (value) => {
-  const match = value.match(DMS_RE);
-  if (!match) {
-    return {
-      ok: false,
-      message: "Use DMS format: 43°43'25.7\"N 80°11'38.5\"W",
-    };
+const specFieldsFor = (assetType, spec) => {
+  if (assetType === "solar") {
+    return [
+      {
+        key: "panel_area_m2",
+        label: "Panel area (m²)",
+        value: spec.panel_area_m2,
+        min: 0.1,
+        step: 0.1,
+        help: "Use the surface area of one panel module.",
+      },
+      {
+        key: "panel_rating_w",
+        label: "Panel rating (W)",
+        value: spec.panel_rating_w,
+        min: 10,
+        step: 5,
+        help: "Nameplate output for one panel.",
+      },
+      {
+        key: "panel_cost_usd",
+        label: "Panel cost ($)",
+        value: spec.panel_cost_usd,
+        min: 1,
+        step: 1,
+        help: "Hardware cost for one panel before construction work.",
+      },
+      {
+        key: "packing_efficiency",
+        label: "Packing efficiency",
+        value: spec.packing_efficiency,
+        min: 0.1,
+        step: 0.01,
+        help: "Share of the site that can actually hold panels after spacing and setbacks.",
+      },
+    ];
   }
-
-  const latDeg = Number(match[1]);
-  const latMin = Number(match[2]);
-  const latSec = Number(match[3]);
-  const latHem = match[4].toUpperCase();
-  const lngDeg = Number(match[5]);
-  const lngMin = Number(match[6]);
-  const lngSec = Number(match[7]);
-  const lngHem = match[8].toUpperCase();
-
-  if (
-    latDeg > 90 ||
-    lngDeg > 180 ||
-    latMin >= 60 ||
-    lngMin >= 60 ||
-    latSec >= 60 ||
-    lngSec >= 60
-  ) {
-    return {
-      ok: false,
-      message: "Latitude/longitude values are out of range.",
-    };
+  if (assetType === "wind") {
+    return [
+      {
+        key: "turbine_rating_kw",
+        label: "Turbine rating (kW)",
+        value: spec.turbine_rating_kw,
+        min: 100,
+        step: 100,
+        help: "Nameplate rating for one turbine.",
+      },
+      {
+        key: "turbine_cost_usd",
+        label: "Turbine cost ($)",
+        value: spec.turbine_cost_usd,
+        min: 10000,
+        step: 10000,
+        help: "Installed hardware cost per turbine.",
+      },
+      {
+        key: "spacing_area_m2",
+        label: "Spacing area (m²)",
+        value: spec.spacing_area_m2,
+        min: 1000,
+        step: 1000,
+        help: "Average land area needed to safely space one turbine.",
+      },
+      {
+        key: "minimum_viable_wind_speed_mps",
+        label: "Minimum wind speed (m/s)",
+        value: spec.minimum_viable_wind_speed_mps,
+        min: 1,
+        step: 0.1,
+        help: "Below this level the turbine is treated as a weak fit.",
+      },
+    ];
   }
-
-  let lat = latDeg + latMin / 60 + latSec / 3600;
-  let lng = lngDeg + lngMin / 60 + lngSec / 3600;
-  if (latHem === "S") lat *= -1;
-  if (lngHem === "W") lng *= -1;
-
-  return { ok: true, value: { lat, lng } };
-};
-
-const haversineMeters = (a, b) => {
-  const radius = 6371000;
-  const lat1 = (a.lat * Math.PI) / 180;
-  const lat2 = (b.lat * Math.PI) / 180;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const sinLat = Math.sin(dLat / 2);
-  const sinLng = Math.sin(dLng / 2);
-  const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
-  return 2 * radius * Math.asin(Math.min(1, Math.sqrt(h)));
-};
-
-const markerIcon = (color) =>
-  L.divIcon({
-    className: "map-pin-icon",
-    html: `<span style="--pin:${color}"></span>`,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
-  });
-
-const rectangleFromTwoPoints = (a, b) => {
-  const south = Math.min(a.lat, b.lat);
-  const north = Math.max(a.lat, b.lat);
-  const west = Math.min(a.lng, b.lng);
-  const east = Math.max(a.lng, b.lng);
   return [
-    [south, west],
-    [south, east],
-    [north, east],
-    [north, west],
+    {
+      key: "power_density_kw_per_m2",
+      label: "Power density (kW/m²)",
+      value: spec.power_density_kw_per_m2,
+      min: 0.001,
+      step: 0.001,
+      help: "IT load that each square meter of built floor area can support.",
+    },
+    {
+      key: "construction_cost_per_m2_usd",
+      label: "Shell cost ($/m²)",
+      value: spec.construction_cost_per_m2_usd,
+      min: 1,
+      step: 1,
+      help: "Core building cost before server and power equipment fit-out.",
+    },
+    {
+      key: "fit_out_cost_per_kw_usd",
+      label: "Fit-out cost ($/kW)",
+      value: spec.fit_out_cost_per_kw_usd,
+      min: 1,
+      step: 10,
+      help: "Electrical and cooling build cost per delivered IT kilowatt.",
+    },
   ];
 };
-
-const centroid = (points) => {
-  if (!points.length) return { lat: 0, lng: 0 };
-  const lat = points.reduce((sum, p) => sum + p[0], 0) / points.length;
-  const lng = points.reduce((sum, p) => sum + p[1], 0) / points.length;
-  return { lat, lng };
-};
-
-const polygonAreaKm2 = (points) => {
-  if (points.length < 3) return 0;
-  const c = centroid(points);
-  const latScale = 111320;
-  const lngScale = 111320 * Math.cos((c.lat * Math.PI) / 180);
-  let twiceArea = 0;
-
-  for (let i = 0; i < points.length; i += 1) {
-    const j = (i + 1) % points.length;
-    const x1 = points[i][1] * lngScale;
-    const y1 = points[i][0] * latScale;
-    const x2 = points[j][1] * lngScale;
-    const y2 = points[j][0] * latScale;
-    twiceArea += x1 * y2 - x2 * y1;
-  }
-
-  return Math.abs(twiceArea / 2) / 1_000_000;
-};
-
-const regionAreaKm2 = (region) => {
-  if (region.type === "circle") {
-    const radiusKm = region.radiusMeters / 1000;
-    return Math.PI * radiusKm * radiusKm;
-  }
-  return polygonAreaKm2(region.points);
-};
-
-const regionCenter = (region) => {
-  if (region.type === "circle") return region.center;
-  return centroid(region.points);
-};
-
-function MapEvents({ onMapClick, onMapMove }) {
-  useMapEvents({
-    click: (event) => onMapClick(event.latlng),
-    movestart: onMapMove,
-    zoomstart: onMapMove,
-  });
-  return null;
-}
 
 function App() {
   const mapRef = useRef(null);
   const popupRef = useRef(null);
 
   const [theme, setTheme] = useState("light");
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [landingState, setLandingState] = useState("visible");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeCoordField, setActiveCoordField] = useState(null);
@@ -207,21 +161,19 @@ function App() {
   const [energyType, setEnergyType] = useState("");
   const [modelMode, setModelMode] = useState("predefined");
   const [selectedModel, setSelectedModel] = useState("");
-  const [customModel, setCustomModel] = useState("");
+  const [imageryProvider, setImageryProvider] = useState("usgs");
+  const [segmentationBackend, setSegmentationBackend] = useState("auto");
+  const [cellSizeMeters, setCellSizeMeters] = useState(300);
+  const [solarSpec, setSolarSpec] = useState(defaultSpec("solar"));
+  const [windSpec, setWindSpec] = useState(defaultSpec("wind"));
+  const [dataCenterSpec, setDataCenterSpec] = useState(defaultSpec("data_center"));
 
   const [submitError, setSubmitError] = useState("");
   const [searching, setSearching] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
   const [result, setResult] = useState(null);
-
-  const tilesUrl =
-    theme === "light"
-      ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-  const tileAttribution =
-    theme === "light"
-      ? "&copy; OpenStreetMap contributors"
-      : "&copy; OpenStreetMap contributors &copy; CARTO";
+  const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+  const [trendOpen, setTrendOpen] = useState(false);
 
   const enterApp = useCallback(() => {
     if (landingState !== "visible") return;
@@ -349,7 +301,7 @@ function App() {
       ];
     }
 
-    return L.latLngBounds(region.points);
+    return region.points;
   }, [region]);
 
   const fitRegion = useCallback(
@@ -366,18 +318,26 @@ function App() {
     [mapBounds],
   );
 
-  const modelOptions =
+  const assetPresets = useMemo(
+    () => (energyType && energyType !== "infrastructure" ? ASSET_PRESETS[energyType] ?? [] : []),
+    [energyType],
+  );
+  const modelValue = modelMode === "predefined" ? selectedModel : "custom-spec";
+  const requiresModel = energyType !== "infrastructure";
+  const activeSpec =
     energyType === "solar"
-      ? SOLAR_MODELS
+      ? solarSpec
       : energyType === "wind"
-        ? WIND_MODELS
-        : [];
-  const modelValue =
-    modelMode === "predefined" ? selectedModel : customModel.trim();
+        ? windSpec
+        : dataCenterSpec;
+  const assetSpecFields = useMemo(
+    () => (energyType && energyType !== "infrastructure" ? specFieldsFor(energyType, activeSpec) : []),
+    [activeSpec, energyType],
+  );
 
   const isReady =
     !!energyType &&
-    !!modelValue &&
+    (!requiresModel || !!modelValue) &&
     !p1Error &&
     !p2Error &&
     !!region &&
@@ -387,8 +347,10 @@ function App() {
   const runAnalysis = async () => {
     const errors = [];
     if (p1Error || p2Error) errors.push("Fix coordinate formatting first.");
-    if (!energyType) errors.push("Choose an energy type.");
-    if (!modelValue) errors.push("Choose or enter a model.");
+    if (!energyType) errors.push("Choose an asset type.");
+    if (requiresModel && !modelValue) {
+      errors.push("Choose a preset or enter a custom specification.");
+    }
     if (!region) errors.push("Define a region on the map.");
 
     if (errors.length) {
@@ -401,43 +363,41 @@ function App() {
     fitRegion(0.55);
 
     try {
-      if (energyType === "solar") {
-        const solarResult = await analyzeSolarRegion(region);
-        setResult({
-          type: "solar",
-          label: "Solar panels",
-          areaKm2: solarResult.area_km2,
-          placements: solarResult.panel_count,
-          equipmentCost: solarResult.panel_cost_usd,
-          constructionCost: solarResult.construction_cost_usd,
-          totalCost: solarResult.total_project_cost_usd,
-          annualMWh: solarResult.estimated_annual_output_kwh / 1000,
-          installedCapacityKw: solarResult.installed_capacity_kw,
-          suitabilityScore: solarResult.suitability_score,
-          suitabilityReason: solarResult.suitability_reason,
-          weatherSource: solarResult.weather_source,
-          suitable: solarResult.suitable,
+      if (energyType === "infrastructure") {
+        const infrastructureResult = await analyzeInfrastructureRegion(region, {
+          imagery_provider: imageryProvider,
+          segmentation_backend: segmentationBackend,
+          cell_size_m: cellSizeMeters,
         });
+        const mappedResult = mapInfrastructureResult(infrastructureResult, {
+          imageryProvider,
+          segmentationBackend,
+          cellSizeMeters,
+        });
+        setSelectedCandidateId(mappedResult.candidates[0]?.id ?? null);
+        setResult(mappedResult);
+        setTrendOpen(false);
       } else {
-        await new Promise((resolve) => {
-          window.setTimeout(resolve, 900);
+        const assetResult = await analyzeAssetRegion(region, {
+          assetType: energyType,
+          presetName:
+            modelMode === "predefined"
+              ? assetPresets.find((preset) => preset.id === selectedModel)?.label ?? null
+              : "Custom specification",
+          solarSpec,
+          windSpec,
+          dataCenterSpec,
         });
-
-        const areaKm2 = Math.max(0.1, regionAreaKm2(region));
-        const placements = Math.floor(areaKm2 * 4.6);
-        const equipmentCost = placements * 1_850_000;
-        const constructionCost = areaKm2 * 680_000;
-        const annualMWh = areaKm2 * 4_900;
-
-        setResult({
-          type: "wind",
-          areaKm2,
-          placements,
-          equipmentCost,
-          constructionCost,
-          annualMWh,
-          label: "Wind turbines",
-        });
+        setSelectedCandidateId(null);
+        setResult(
+          mapAssetResult(assetResult, {
+            presetName:
+              modelMode === "predefined"
+                ? assetPresets.find((preset) => preset.id === selectedModel)?.label ?? null
+                : "Custom specification",
+          }),
+        );
+        setTrendOpen(false);
       }
 
       setStatsVisible(true);
@@ -452,10 +412,25 @@ function App() {
     }
   };
 
+  const activeInfrastructureCandidate = useMemo(() => {
+    if (result?.type !== "infrastructure") return null;
+    return (
+      result.candidates.find((candidate) => candidate.id === selectedCandidateId) ??
+      result.candidates[0] ??
+      null
+    );
+  }, [result, selectedCandidateId]);
+
   const popupPosition = useMemo(() => {
+    if (activeInfrastructureCandidate) {
+      return [
+        activeInfrastructureCandidate.center.lat,
+        activeInfrastructureCandidate.center.lng,
+      ];
+    }
     const c = regionCenter(region);
     return [c.lat, c.lng];
-  }, [region]);
+  }, [activeInfrastructureCandidate, region]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -465,325 +440,140 @@ function App() {
 
   return (
     <main className={`app-root theme-${theme}`}>
-      <div className="map-layer" aria-hidden={landingState !== "hidden"}>
-        <MapContainer
-          className="map-canvas"
-          center={[43.67, -80.13]}
-          zoom={10}
-          zoomControl
-          scrollWheelZoom
-          whenReady={(event) => {
-            mapRef.current = event.target;
-            fitRegion(0);
-          }}
-        >
-          <TileLayer
-            url={tilesUrl}
-            attribution={tileAttribution}
-            maxZoom={20}
-            subdomains={["a", "b", "c"]}
-          />
-          <MapEvents
-            onMapClick={onMapClick}
-            onMapMove={() => setUserMovedMap(true)}
-          />
-
-          {region.type === "circle" ? (
-            <Circle
-              center={[region.center.lat, region.center.lng]}
-              radius={region.radiusMeters}
-              eventHandlers={{
-                click: () => result && setStatsVisible((value) => !value),
-              }}
-              pathOptions={{
-                color: "#1b7d67",
-                weight: 2,
-                fillColor: "#65c9ad",
-                fillOpacity: 0.16,
-              }}
-            />
-          ) : (
-            <Polygon
-              positions={region.points}
-              eventHandlers={{
-                click: () => result && setStatsVisible((value) => !value),
-              }}
-              pathOptions={{
-                color: "#1b7d67",
-                weight: 2,
-                fillColor: "#65c9ad",
-                fillOpacity: 0.14,
-              }}
-            />
-          )}
-
-          {draftPoints.length > 0 && (
-            <Polyline
-              positions={draftPoints}
-              pathOptions={{ color: "#b17d2f", weight: 2, dashArray: "5 7" }}
-            />
-          )}
-
-          <Marker
-            position={[p1.lat, p1.lng]}
-            icon={markerIcon("#4ab394")}
-            draggable
-            eventHandlers={{
-              drag: (event) => applyCoord("p1", event.target.getLatLng()),
-              dragend: (event) => applyCoord("p1", event.target.getLatLng()),
-            }}
-          />
-          <Marker
-            position={[p2.lat, p2.lng]}
-            icon={markerIcon("#c09244")}
-            draggable
-            eventHandlers={{
-              drag: (event) => applyCoord("p2", event.target.getLatLng()),
-              dragend: (event) => applyCoord("p2", event.target.getLatLng()),
-            }}
-          />
-
-          {statsVisible && result && (
-            <Popup
-              ref={popupRef}
-              position={popupPosition}
-              closeButton
-              autoClose={false}
-              closeOnClick={false}
-              eventHandlers={{ remove: () => setStatsVisible(false) }}
-            >
-              <div className="result-popup">
-                <h3>{result.label} Estimate</h3>
-                <p>Area: {result.areaKm2.toFixed(2)} km²</p>
-                <p>Capacity fit: {result.placements.toLocaleString()}</p>
-                <p>
-                  Construction cost: ${result.constructionCost.toLocaleString()}
-                </p>
-                <p>Equipment cost: ${result.equipmentCost.toLocaleString()}</p>
-                <p>
-                  Estimated production: {result.annualMWh.toLocaleString()}{" "}
-                  MWh/year
-                </p>
-                {result.type === "solar" && (
-                  <>
-                    <p>
-                      Installed capacity: {result.installedCapacityKw.toLocaleString()} kW
-                    </p>
-                    <p>Total cost: ${result.totalCost.toLocaleString()}</p>
-                    <p>Suitability score: {result.suitabilityScore}</p>
-                    <p>{result.suitabilityReason}</p>
-                    <p>Weather source: {result.weatherSource}</p>
-                  </>
-                )}
-              </div>
-            </Popup>
-          )}
-        </MapContainer>
-      </div>
+      <MapScene
+        region={region}
+        draftPoints={draftPoints}
+        p1={p1}
+        p2={p2}
+        result={result}
+        selectedCandidateId={selectedCandidateId}
+        selectedCandidate={activeInfrastructureCandidate}
+        statsVisible={statsVisible}
+        popupRef={popupRef}
+        popupPosition={popupPosition}
+        onMapClick={onMapClick}
+        onMapMove={() => setUserMovedMap(true)}
+        onToggleStats={() => setStatsVisible((value) => !value)}
+        onSetStatsVisible={setStatsVisible}
+        onApplyCoord={applyCoord}
+        onSelectCandidate={(candidateId) => {
+          setSelectedCandidateId(candidateId);
+          setStatsVisible(true);
+        }}
+        onMapReady={(event) => {
+          mapRef.current = event.target;
+          fitRegion(0);
+        }}
+        onLandingInteraction={enterApp}
+        landingHidden={landingState === "hidden"}
+        theme={theme}
+      />
 
       <div className="ui-layer">
-        <header className="top-strip">
-          <div>
-            <h1>Renewables Site Scout</h1>
-            <p>
-              Select a region and estimate practical solar or wind deployment
-              outcomes.
-            </p>
-          </div>
-          <div className="top-actions">
-            <button
-              type="button"
-              onClick={() =>
-                setTheme((value) => (value === "light" ? "dark" : "light"))
-              }
-            >
-              {theme === "light" ? "Dark mode" : "Light mode"}
-            </button>
-            {userMovedMap && (
-              <button
-                type="button"
-                onClick={() => {
-                  fitRegion(0.55);
-                  setUserMovedMap(false);
-                }}
-              >
-                Refocus region
-              </button>
-            )}
-          </div>
-        </header>
+        <TopBar
+          theme={theme}
+          expanded={settingsOpen}
+          onToggleExpanded={() => setSettingsOpen((value) => !value)}
+          onToggleTheme={() => setTheme((value) => (value === "light" ? "dark" : "light"))}
+          userMovedMap={userMovedMap}
+          onRefocus={() => {
+            fitRegion(0.55);
+            setUserMovedMap(false);
+          }}
+        />
 
-        <section className="bottom-panel" aria-label="Inputs">
-          <div className="coords-row">
-            <label>
-              Point 1
-              <input
-                value={p1Text}
-                onChange={(event) => onCoordChange("p1", event.target.value)}
-                onFocus={() => setActiveCoordField("p1")}
-                placeholder={"43°43'25.7\"N 80°11'38.5\"W"}
-              />
-              {p1Error && <small className="field-error">{p1Error}</small>}
-            </label>
+        <ControlPanel
+          collapsed={panelCollapsed}
+          onToggleCollapsed={() => setPanelCollapsed((value) => !value)}
+          p1Text={p1Text}
+          p2Text={p2Text}
+          p1Error={p1Error}
+          p2Error={p2Error}
+          onCoordChange={onCoordChange}
+          onCoordFocus={setActiveCoordField}
+          advancedOpen={advancedOpen}
+          onToggleAdvanced={() => setAdvancedOpen((value) => !value)}
+          drawMode={drawMode}
+          onDrawModeChange={(mode) => {
+            setDrawMode(mode);
+            setDraftPoints([]);
+          }}
+          onFinalizePolygon={finalizePolygon}
+          onRemoveLastPoint={removeLastPolygonPoint}
+          onUseRectangle={useRectangleRegion}
+          hasDraftPoints={draftPoints.length > 0}
+          energyType={energyType}
+          modelMode={modelMode}
+          selectedModel={selectedModel}
+          assetSpecFields={assetSpecFields}
+          assetPresets={assetPresets}
+          imageryProvider={imageryProvider}
+          segmentationBackend={segmentationBackend}
+          cellSizeMeters={cellSizeMeters}
+          onEnergyTypeChange={(nextType) => {
+            setEnergyType(nextType);
+            setSelectedModel(ASSET_PRESETS[nextType]?.[0]?.id ?? "");
+            if (nextType !== "infrastructure") {
+              setModelMode("predefined");
+            }
+            setSelectedCandidateId(null);
+            setResult(null);
+            setStatsVisible(false);
+            setSubmitError("");
+          }}
+          onModelModeChange={setModelMode}
+          onSelectedModelChange={(presetId) => {
+            setSelectedModel(presetId);
+            const preset = assetPresets.find((item) => item.id === presetId);
+            if (!preset) return;
+            if (energyType === "solar") setSolarSpec(structuredClone(preset.spec));
+            else if (energyType === "wind") setWindSpec(structuredClone(preset.spec));
+            else if (energyType === "data_center") {
+              setDataCenterSpec(structuredClone(preset.spec));
+            }
+          }}
+          onAssetSpecChange={(key, value) => {
+            const numeric = Number(value);
+            if (Number.isNaN(numeric)) return;
+            if (energyType === "solar") {
+              setSolarSpec((current) => ({ ...current, [key]: numeric }));
+            } else if (energyType === "wind") {
+              setWindSpec((current) => ({ ...current, [key]: numeric }));
+            } else if (energyType === "data_center") {
+              setDataCenterSpec((current) => ({ ...current, [key]: numeric }));
+            }
+          }}
+          onImageryProviderChange={setImageryProvider}
+          onSegmentationBackendChange={setSegmentationBackend}
+          onCellSizeMetersChange={(value) => {
+            const numeric = Number(value);
+            if (Number.isNaN(numeric)) {
+              setCellSizeMeters(300);
+              return;
+            }
+            setCellSizeMeters(clamp(Math.round(numeric), 100, 2000));
+          }}
+          submitError={submitError}
+          isReady={isReady}
+          searching={searching}
+          result={result}
+          selectedCandidateId={selectedCandidateId}
+          onSelectCandidate={(candidateId) => {
+            setSelectedCandidateId(candidateId);
+            setStatsVisible(true);
+          }}
+          onRunAnalysis={runAnalysis}
+          onOpenTrend={() => setTrendOpen(true)}
+        />
 
-            <label>
-              Point 2
-              <input
-                value={p2Text}
-                onChange={(event) => onCoordChange("p2", event.target.value)}
-                onFocus={() => setActiveCoordField("p2")}
-                placeholder={"43°43'25.7\"N 80°11'38.5\"W"}
-              />
-              {p2Error && <small className="field-error">{p2Error}</small>}
-            </label>
-          </div>
-
-          <div className="advanced-block">
-            <button
-              type="button"
-              className={advancedOpen ? "expanded" : ""}
-              onClick={() => setAdvancedOpen((value) => !value)}
-            >
-              Advanced Settings
-            </button>
-
-            <div className={`advanced-menu ${advancedOpen ? "open" : ""}`}>
-              <div className="mode-row">
-                <button
-                  type="button"
-                  className={drawMode === "circle" ? "active" : ""}
-                  onClick={() => {
-                    setDrawMode("circle");
-                    setDraftPoints([]);
-                  }}
-                >
-                  Circle tool
-                </button>
-                <button
-                  type="button"
-                  className={drawMode === "polygon" ? "active" : ""}
-                  onClick={() => {
-                    setDrawMode("polygon");
-                    setDraftPoints([]);
-                  }}
-                >
-                  Polygon tool
-                </button>
-                <button type="button" onClick={finalizePolygon}>
-                  Close polygon
-                </button>
-                <button
-                  type="button"
-                  onClick={removeLastPolygonPoint}
-                  disabled={!draftPoints.length}
-                >
-                  Undo point
-                </button>
-                <button type="button" onClick={useRectangleRegion}>
-                  Use rectangle
-                </button>
-              </div>
-              <p className="helper">
-                Click a coordinate field then map to populate it. In circle mode
-                click center then edge. In polygon mode click vertices then
-                Close polygon.
-              </p>
-            </div>
-          </div>
-
-          <div className="energy-row">
-            <label>
-              Energy type
-              <select
-                value={energyType}
-                onChange={(event) => {
-                  const nextType = event.target.value;
-                  setEnergyType(nextType);
-                  setSelectedModel("");
-                  setCustomModel("");
-                }}
-              >
-                <option value="">Select type</option>
-                <option value="solar">Solar panels</option>
-                <option value="wind">Wind turbines</option>
-              </select>
-            </label>
-
-            {energyType && (
-              <label>
-                Model source
-                <select
-                  value={modelMode}
-                  onChange={(event) => setModelMode(event.target.value)}
-                >
-                  <option value="predefined">Predefined models</option>
-                  <option value="custom">Custom specification</option>
-                </select>
-              </label>
-            )}
-
-            {energyType && modelMode === "predefined" && (
-              <label>
-                Model
-                <select
-                  value={selectedModel}
-                  onChange={(event) => setSelectedModel(event.target.value)}
-                >
-                  <option value="">Select model</option>
-                  {modelOptions.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {energyType && modelMode === "custom" && (
-              <label>
-                Custom spec
-                <input
-                  value={customModel}
-                  onChange={(event) => setCustomModel(event.target.value)}
-                  placeholder="Enter custom model or specs"
-                />
-              </label>
-            )}
-          </div>
-
-          {submitError && <p className="submit-error">{submitError}</p>}
-
-          <div className="actions-row">
-            <button
-              type="button"
-              className="primary"
-              disabled={!isReady || searching}
-              onClick={runAnalysis}
-            >
-              {searching ? "Computing..." : "Search"}
-            </button>
-          </div>
-        </section>
+        <TrendModal
+          open={trendOpen}
+          onClose={() => setTrendOpen(false)}
+          result={result?.type !== "infrastructure" ? result : null}
+        />
       </div>
 
-      {landingState !== "hidden" && (
-        <section
-          className={`landing ${landingState === "fading" ? "fading" : ""}`}
-          role="dialog"
-          aria-label="Welcome"
-          onClick={enterApp}
-        >
-          <div className="landing-card">
-            <p className="kicker">Catapult 2026</p>
-            <h2>Renewables Site Scout</h2>
-            <p>
-              Plan clean-energy sites with precise map-based region selection
-              and fast feasibility estimates.
-            </p>
-            <small>Click anywhere or press any key to begin.</small>
-          </div>
-        </section>
-      )}
+      <LandingOverlay landingState={landingState} onEnter={enterApp} />
     </main>
   );
 }

@@ -430,6 +430,32 @@ def _month_to_cyclic_features(month: int) -> tuple[float, float]:
     return float(np.sin(angle)), float(np.cos(angle))
 
 
+def _nearest_lookup_row_indices(
+    site_lats: np.ndarray,
+    site_lons: np.ndarray,
+    lookup_lats: np.ndarray,
+    lookup_lons: np.ndarray,
+    chunk_size: int = 1000,
+) -> np.ndarray:
+    earth_radius_km = 6371.0088
+    lookup_lat_rad = np.radians(lookup_lats.astype(float))
+    lookup_lon_rad = np.radians(lookup_lons.astype(float))
+    nearest_indices = np.empty(len(site_lats), dtype=int)
+
+    for start in range(0, len(site_lats), chunk_size):
+        end = min(start + chunk_size, len(site_lats))
+        site_lat_rad = np.radians(site_lats[start:end].astype(float))[:, None]
+        site_lon_rad = np.radians(site_lons[start:end].astype(float))[:, None]
+
+        dlat = lookup_lat_rad[None, :] - site_lat_rad
+        dlon = lookup_lon_rad[None, :] - site_lon_rad
+        a = np.sin(dlat / 2.0) ** 2 + np.cos(site_lat_rad) * np.cos(lookup_lat_rad[None, :]) * np.sin(dlon / 2.0) ** 2
+        distances_km = earth_radius_km * (2.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a)))
+        nearest_indices[start:end] = distances_km.argmin(axis=1)
+
+    return nearest_indices
+
+
 def _build_site_with_era5_dataset(
     source_csv_path: Path,
     era5_path: Path = ERA5_RAW_PATH,
@@ -516,15 +542,53 @@ def build_solar_with_era5_dataset(
 
 def build_wind_with_era5_dataset(
     wind_csv_path: Path = WIND_SOURCE_PATH,
-    era5_path: Path = ERA5_RAW_PATH,
     lookup_csv_path: Path = ERA5_LOOKUP_PATH,
     output_path: Path = WIND_WITH_ERA5_PATH,
 ) -> pd.DataFrame:
-    return _build_site_with_era5_dataset(
-        source_csv_path=wind_csv_path,
-        era5_path=era5_path,
-        lookup_csv_path=lookup_csv_path,
-        output_path=output_path,
-        date_column="t_img_date",
-        date_format="%m/%d/%Y",
+    wind_df = pd.read_csv(wind_csv_path, encoding="utf-8-sig")
+    wind_df["ylat"] = wind_df["ylat"].astype(float)
+    wind_df["xlong"] = wind_df["xlong"].astype(float)
+    wind_df["t_img_date"] = pd.to_datetime(wind_df["t_img_date"].astype(str), format="%m/%d/%Y", errors="coerce")
+
+    lookup_df = pd.read_csv(lookup_csv_path)
+    nearest_lookup_indices = _nearest_lookup_row_indices(
+        site_lats=wind_df["ylat"].to_numpy(),
+        site_lons=wind_df["xlong"].to_numpy(),
+        lookup_lats=lookup_df["era5_latitude"].to_numpy(),
+        lookup_lons=lookup_df["era5_longitude"].to_numpy(),
     )
+    matched_lookup_df = lookup_df.iloc[nearest_lookup_indices].reset_index(drop=True)
+    merged_df = pd.concat([wind_df.reset_index(drop=True), matched_lookup_df], axis=1)
+    merged_df["era5_distance_km"] = _haversine_distance_km(
+        merged_df["ylat"],
+        merged_df["xlong"],
+        merged_df["era5_latitude"],
+        merged_df["era5_longitude"],
+    ).round(4)
+    merged_df["install_month"] = merged_df["t_img_date"].dt.month.fillna(0).astype(int)
+    merged_df["install_month_sin"] = 0.0
+    merged_df["install_month_cos"] = 0.0
+
+    for month in range(1, 13):
+        mask = merged_df["install_month"] == month
+        month_sin, month_cos = _month_to_cyclic_features(month)
+        merged_df.loc[mask, "install_month_sin"] = month_sin
+        merged_df.loc[mask, "install_month_cos"] = month_cos
+
+    valid_months = merged_df["install_month"].between(1, 12)
+    for feature_name in ERA5_CLIMATE_FEATURES:
+        monthly_values = pd.Series(np.nan, index=merged_df.index, dtype=float)
+        for month in range(1, 13):
+            monthly_column = f"climate_m{month:02d}_{feature_name}"
+            monthly_values.loc[merged_df["install_month"] == month] = merged_df.loc[
+                merged_df["install_month"] == month, monthly_column
+            ]
+
+        annual_column = f"climate_annual_{feature_name}"
+        monthly_values.loc[~valid_months] = merged_df.loc[~valid_months, annual_column]
+        merged_df[f"climate_install_month_{feature_name}"] = monthly_values
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    merged_df.to_csv(output_path, index=False)
+    print(f"saved_merged_dataset={output_path}")
+    return merged_df

@@ -1,82 +1,164 @@
 # Backend
 
-FastAPI service for polygon-based solar site analysis.
+FastAPI service for polygon-based solar analysis and multi-use infrastructure siting.
 
-## Responsibilities
+## API Endpoints
 
-The backend accepts a polygon region and returns:
+- `GET /`
+- `GET /health`
+- `POST /solar/analyze`
+- `POST /asset/analyze`
+- `POST /infrastructure/analyze`
 
-- polygon area in square meters and square kilometers
-- estimated solar panel count for the available area
-- solar intensity at the polygon centroid
-- estimated installed capacity in kW
-- estimated annual energy output in kWh
-- panel, construction, and total project costs
-- suitability score, verdict, and explanation
+## Asset Analysis Request
+
+The asset endpoint accepts:
+
+- `asset_type`
+- `points`
+- `preset_name`
+- `solar_spec`
+- `wind_spec`
+- `data_center_spec`
+
+What it returns:
+
+- practical build count estimate
+- installed capacity estimate
+- installation cost estimate
+- feasibility score with plain-language explanation
+- past-year daily generation trend for solar and wind
+- site-fit summary for data centers
+
+## Infrastructure Request
+
+The infrastructure endpoint accepts:
+
+- `points`
+- `cell_size_m`
+- `imagery_provider`
+- `segmentation_backend`
+- `terrain_provider`
+- `include_debug_layers`
+
+Current supported imagery providers:
+
+- `usgs`
+- `mapbox`
+- `sentinel`
+- `none`
+- `google` as a compatibility input that falls back to supported behavior
+
+Current segmentation backends:
+
+- `auto`
+- `hybrid`
+- `rule_based`
+- `unet`
+- `mask_rcnn`
+
+Current terrain providers:
+
+- `opentopodata`
+- `proxy`
 
 ## Module Layout
 
-- [backend.py](backend.py): FastAPI app, CORS setup, and route wiring
-- [schemas.py](schemas.py): request and response models
-- [geometry.py](geometry.py): polygon normalization, projection, area, and centroid math
-- [solar_analysis.py](solar_analysis.py): weather lookup and solar feasibility calculations
-- [tests/](tests): unit tests for geometry and solar analysis
+- `main.py`: route wiring
+- `schemas.py`: pydantic models
+- `geometry.py`: polygon math and validation
+- `solar_analysis.py`: solar-only analysis
+- `infrastructure_pipeline.py`: compatibility wrapper
+- `infrastructure/pipeline.py`: infrastructure orchestrator
+- `infrastructure/providers/imagery.py`: imagery retrieval
+- `infrastructure/providers/vector_data.py`: OSM ingestion
+- `infrastructure/providers/terrain.py`: slope sampling
+- `infrastructure/segmentation.py`: segmentation backends
+- `infrastructure/scoring.py`: feature fusion and candidate scoring
+- `tests/`: backend tests
 
-## Install
+## Provider Notes
 
-```bash
-cd backend
-pip install -r requirements.txt
+- Free default imagery uses USGS `USGSImageryOnly`, which is primarily NAIP in CONUS.
+- OpenStreetMap data is retrieved from Overpass.
+- OpenTopoData is used for live slope estimation.
+- Open-Meteo archive data is used for past-year solar and wind trend generation in the asset endpoint.
+- Mapbox and Sentinel Hub remain optional credentialed providers.
+- Undocumented Google tile scraping is intentionally unsupported.
+
+## Remote ML Notes
+
+The repo does not include local U-Net or Mask R-CNN weights. Instead, `unet` and `mask_rcnn` modes call optional remote inference services when these env vars are present:
+
+- `INFRA_UNET_ENDPOINT`
+- `INFRA_MASK_RCNN_ENDPOINT`
+
+Request payload shape sent to those services:
+
+```json
+{
+  "bbox": { "min_lat": 0, "min_lon": 0, "max_lat": 0, "max_lon": 0 },
+  "width": 256,
+  "height": 256,
+  "pixels": [[[0, 0, 0, 255]]],
+  "cells": [
+    {
+      "id": "cell-1",
+      "bbox": { "min_lat": 0, "min_lon": 0, "max_lat": 0, "max_lon": 0 }
+    }
+  ]
+}
 ```
+
+Expected response payload:
+
+```json
+{
+  "source": "mask-rcnn-service",
+  "cells": [
+    {
+      "id": "cell-1",
+      "vegetation_ratio": 0.1,
+      "water_ratio": 0.0,
+      "impervious_ratio": 0.5,
+      "shadow_ratio": 0.08,
+      "building_ratio": 0.2
+    }
+  ]
+}
+```
+
+If those env vars are absent, the backend falls back to rule-based segmentation and records that fact in `pipeline_notes`.
 
 ## Run
 
 ```bash
 cd backend
-uvicorn backend:app --reload
+uvicorn main:app --reload
 ```
+
+## Environment Variables
+
+None are required to boot the API locally.
+
+Optional live-data env vars:
+
+- `MAPBOX_ACCESS_TOKEN`
+- `MAPBOX_STYLE_OWNER`
+- `MAPBOX_STYLE_ID`
+- `SENTINEL_HUB_CLIENT_ID`
+- `SENTINEL_HUB_CLIENT_SECRET`
+- `SENTINEL_HUB_COLLECTION`
+- `SENTINEL_LOOKBACK_DAYS`
+- `SENTINEL_MAX_CLOUD_COVER`
+- `OSM_OVERPASS_URL`
+- `INFRASTRUCTURE_IMAGERY_SIZE`
+- `INFRA_UNET_ENDPOINT`
+- `INFRA_MASK_RCNN_ENDPOINT`
 
 ## Test
 
 ```bash
 cd backend
-python -m unittest discover -s tests
+python -m unittest discover -s tests -p 'test_*.py'
 ```
-
-## API
-
-### `POST /solar/analyze`
-
-Request body:
-
-```json
-{
-  "points": [
-    { "lat": 33.4, "lon": -112.1 },
-    { "lat": 33.4, "lon": -112.0 },
-    { "lat": 33.3, "lon": -112.0 },
-    { "lat": 33.3, "lon": -112.1 }
-  ]
-}
-```
-
-Optional overrides:
-
-- `panel_area_m2`
-- `panel_rating_w`
-- `panel_cost_usd`
-- `construction_cost_per_m2_usd`
-- `packing_efficiency`
-- `performance_ratio`
-- `sunlight_threshold_kwh_m2_yr`
-
-## Frontend Integration
-
-The frontend calls this backend through [frontend/src/lib/solarAnalysisApi.js](../frontend/src/lib/solarAnalysisApi.js).
-
-Set `VITE_BACKEND_URL` in the frontend environment if the API is not running on `http://127.0.0.1:8000`.
-
-## Notes
-
-- Sunlight intensity is fetched from Open-Meteo for the polygon centroid.
-- If the weather API is unavailable, the service falls back to a latitude-based proxy.

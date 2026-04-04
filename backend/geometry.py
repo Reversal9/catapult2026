@@ -8,6 +8,7 @@ from schemas import Coordinate
 
 
 EARTH_RADIUS_M = 6_371_000.0
+EPSILON = 1e-12
 
 
 @dataclass(frozen=True)
@@ -96,3 +97,56 @@ def polygon_area_and_centroid(points: list[Coordinate]) -> tuple[float, Coordina
         lon=lon0 + math.degrees(centroid_x / (EARTH_RADIUS_M * cos_lat0)),
     )
     return area_m2, centroid
+
+
+def _orientation(a: Coordinate, b: Coordinate, c: Coordinate) -> float:
+    return (b.lon - a.lon) * (c.lat - a.lat) - (b.lat - a.lat) * (c.lon - a.lon)
+
+
+def _on_segment(a: Coordinate, b: Coordinate, c: Coordinate) -> bool:
+    return (
+        min(a.lon, b.lon) <= c.lon <= max(a.lon, b.lon)
+        and min(a.lat, b.lat) <= c.lat <= max(a.lat, b.lat)
+    )
+
+
+def _segments_intersect(
+    a1: Coordinate,
+    a2: Coordinate,
+    b1: Coordinate,
+    b2: Coordinate,
+) -> bool:
+    o1 = _orientation(a1, a2, b1)
+    o2 = _orientation(a1, a2, b2)
+    o3 = _orientation(b1, b2, a1)
+    o4 = _orientation(b1, b2, a2)
+
+    if abs(o1) < EPSILON and _on_segment(a1, a2, b1):
+        return True
+    if abs(o2) < EPSILON and _on_segment(a1, a2, b2):
+        return True
+    if abs(o3) < EPSILON and _on_segment(b1, b2, a1):
+        return True
+    if abs(o4) < EPSILON and _on_segment(b1, b2, a2):
+        return True
+
+    return (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0)
+
+
+def polygon_self_intersects(points: list[Coordinate]) -> bool:
+    polygon = normalize_polygon(points)
+    n = len(polygon)
+    for i in range(n):
+        a1 = polygon[i]
+        a2 = polygon[(i + 1) % n]
+        for j in range(i + 1, n):
+            if abs(i - j) <= 1:
+                continue
+            if i == 0 and j == n - 1:
+                continue
+
+            b1 = polygon[j]
+            b2 = polygon[(j + 1) % n]
+            if _segments_intersect(a1, a2, b1, b2):
+                return True
+    return False

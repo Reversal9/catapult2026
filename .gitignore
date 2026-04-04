@@ -8,6 +8,12 @@ __pycache__/
 # C extensions
 *.so
 
+pyvenv.cfg
+requirements.txt
+
+Lib/
+Scripts/
+
 # Distribution / packaging
 .Python
 build/

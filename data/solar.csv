@@ -4169,7 +4169,7 @@
 406655,single,67593,NY,Cayuga,42.922588,-76.603638,87020,20241116,4,"NSF Aurelius Site 2, LLC",2024,NYIS,PV,,ground,single-axis,180,0,,5,5,greenfield,non-agrivoltaic,,-0.303699522
 406656,multi,67594,NY,Cayuga,42.919914,-76.608055,89466,20241116,4,"NSF Aurelius Site 3, LLC",2024,NYIS,PV,,ground,single-axis,180,0,,5,5,greenfield,non-agrivoltaic,,-0.331752563
 406657,single,67595,NY,Cayuga,42.919857,-76.604591,85164,20241116,4,"NSF Aurelius Site 4, LLC",2024,NYIS,PV,,ground,single-axis,180,0,,4.9,4.9,greenfield,non-agrivoltaic,,-0.30230674
-406661,single,67617,NY,Tioga,42.235077,-76.371124,109517,20240231,4,Spencer (NY),2024,NYIS,PV,,ground,single-axis,180,0,,4.9,4.9,greenfield,non-agrivoltaic,,-0.530783244
+406661,single,67617,NY,Tioga,42.235077,-76.371124,109517,20240228,4,Spencer (NY),2024,NYIS,PV,,ground,single-axis,180,0,,4.9,4.9,greenfield,non-agrivoltaic,,-0.530783244
 405154,multi,58787,NY,Suffolk,40.822727,-73.224098,34329,20240214,4,Dennison,2011,NYIS,PV,,canopy,fixed-tilt,90,6,,2,2.2,greenfield,non-agrivoltaic,,-0.185342615
 405258,single,60507,NY,Broome,42.060322,-75.822258,69545,20241012,4,Broome County,2018,NYIS,PV,,ground,fixed-tilt,175,30,,4,4.6,greenfield,non-agrivoltaic,,-0.14858274
 406001,single,65805,NY,Schoharie,42.771664,-74.551491,564719,20230711,3,"East Point Energy Center, LLC",2024,NYIS,PV,,ground,single-axis,180,0,,50,50,greenfield,non-agrivoltaic,,0.251352022

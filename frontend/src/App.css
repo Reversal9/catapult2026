@@ -1,0 +1,264 @@
+.immersive-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #06101a;
+}
+
+.immersive-root > div:first-child {
+  position: absolute;
+  inset: 0;
+}
+
+.landing-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(
+      circle at 30% 25%,
+      rgba(104, 250, 208, 0.2),
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 72% 68%,
+      rgba(255, 176, 88, 0.18),
+      transparent 45%
+    ),
+    rgba(2, 8, 15, 0.84);
+  backdrop-filter: blur(4px);
+  z-index: 40;
+  animation: fadeIn 340ms ease-out;
+}
+
+.landing-card {
+  width: min(760px, 92vw);
+  border: 1px solid rgba(138, 220, 250, 0.35);
+  border-radius: 18px;
+  background: rgba(7, 16, 26, 0.9);
+  padding: 30px;
+  text-align: center;
+}
+
+.landing-card .tag {
+  margin: 0 0 8px;
+  letter-spacing: 0.2em;
+  font-size: 0.75rem;
+  color: #9eb9ce;
+}
+
+.landing-card h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4.5vw, 3.3rem);
+  line-height: 1;
+}
+
+.landing-card p {
+  margin: 12px auto 0;
+  max-width: 58ch;
+  color: #d9e5ef;
+}
+
+.landing-card small {
+  display: block;
+  margin-top: 18px;
+  color: #8fb0c7;
+}
+
+.overlay-top {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 15;
+  max-width: min(560px, calc(100vw - 28px));
+  border: 1px solid rgba(97, 197, 227, 0.35);
+  background: rgba(8, 19, 31, 0.72);
+  border-radius: 14px;
+  padding: 12px 14px;
+  backdrop-filter: blur(7px);
+}
+
+.overlay-top h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: #f6f4ea;
+}
+
+.overlay-top p {
+  margin: 6px 0 0;
+  color: #c4d4e2;
+  font-size: 0.88rem;
+}
+
+.overlay-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  width: min(1200px, calc(100vw - 20px));
+  z-index: 16;
+  border: 1px solid rgba(88, 160, 197, 0.45);
+  background: rgba(9, 20, 30, 0.82);
+  border-radius: 14px;
+  padding: 12px;
+  backdrop-filter: blur(8px);
+  display: grid;
+  gap: 10px;
+}
+
+.overlay-bottom label,
+.overlay-bottom p,
+.overlay-bottom span {
+  font-size: 0.8rem;
+  color: #99b3c8;
+}
+
+.overlay-bottom input,
+.overlay-bottom select,
+.overlay-bottom button {
+  min-height: 36px;
+  border-radius: 9px;
+  border: 1px solid rgba(94, 145, 178, 0.6);
+  background: rgba(11, 26, 40, 0.95);
+  color: #ecf4fb;
+  padding: 7px 10px;
+  font-family: inherit;
+}
+
+.overlay-bottom button {
+  cursor: pointer;
+}
+
+.overlay-bottom button.active {
+  border-color: #ffd07c;
+  box-shadow: inset 0 0 0 1px rgba(255, 208, 124, 0.6);
+}
+
+.coord-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.coord-row label,
+.model-card {
+  display: grid;
+  gap: 6px;
+}
+
+.draw-row,
+.action-row,
+.mode-row,
+.equip-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.equip-row .check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.model-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.model-card {
+  border: 1px solid rgba(75, 125, 155, 0.5);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(9, 20, 32, 0.45);
+}
+
+.model-card p {
+  margin: 0;
+}
+
+.action-row .search {
+  background: linear-gradient(120deg, #ffc46f, #ec7850);
+  color: #1f1206;
+  border-color: transparent;
+  font-weight: 700;
+}
+
+.search-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 10, 16, 0.52);
+  backdrop-filter: blur(2px);
+  z-index: 20;
+}
+
+.search-popup,
+.stats-popup {
+  border-radius: 12px;
+  border: 1px solid rgba(97, 177, 214, 0.42);
+  background: rgba(8, 17, 29, 0.92);
+  color: #edf7ff;
+  padding: 14px;
+}
+
+.search-popup {
+  width: min(460px, 85vw);
+}
+
+.stats-popup {
+  position: absolute;
+  right: 14px;
+  top: 96px;
+  width: min(380px, calc(100vw - 28px));
+  z-index: 25;
+  cursor: pointer;
+}
+
+.stats-popup h3 {
+  margin: 0 0 8px;
+}
+
+.stats-popup p {
+  margin: 6px 0;
+}
+
+.stats-popup small {
+  color: #90b3ca;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 980px) {
+  .model-row,
+  .coord-row {
+    grid-template-columns: 1fr;
+  }
+
+  .overlay-top {
+    max-width: calc(100vw - 16px);
+    left: 8px;
+    top: 8px;
+  }
+
+  .overlay-bottom {
+    width: calc(100vw - 10px);
+    bottom: 8px;
+  }
+
+  .stats-popup {
+    right: 8px;
+    top: 160px;
+  }
+}

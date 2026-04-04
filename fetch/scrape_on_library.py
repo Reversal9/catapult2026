@@ -104,4 +104,4 @@ def get_panel_dimensions(make: str, model: str) -> dict:
 
 
 if __name__ == "__main__":
-    print(get_panel_specs("REC Solar", "REC250PE-BLK"))
+    print(get_panel_specs("Ablytek", "6MN6A280"))

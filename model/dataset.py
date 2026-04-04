@@ -15,8 +15,9 @@ SOLAR_MODEL_FEATURES = SOLAR_DATA_FEATURES + SOLAR_CLIMATE_FEATURES
 
 WIND_CLIMATE_FEATURES = ["climate_annual_temperature_c", "climate_annual_relative_humidity_pct", "climate_annual_total_precipitation_mm", "climate_total_total_precipitation_mm", "climate_annual_snowfall_mm", "climate_total_snowfall_mm", "climate_annual_cloud_cover_pct", "climate_annual_windspeed_m_s", "climate_install_month_windspeed_m_s"]
 WIND_DATA_FEATURES = ["t_cap", "t_hh", "t_rd", "t_rsa", "t_ttlh"]
+WIND_DERIV_FEATURES = ["area", "num_turbines", "wind_power_cubed", "turbine_density"]
 WIND_OUTPUT_FEATURES = ["avg_annual_generation"]
-WIND_MODEL_FEATURES = WIND_DATA_FEATURES + WIND_CLIMATE_FEATURES
+WIND_MODEL_FEATURES = WIND_DATA_FEATURES + WIND_CLIMATE_FEATURES + WIND_DERIV_FEATURES
 
 def process_solar_data():
 
@@ -85,55 +86,20 @@ def process_wind_data():
 
     aggregated_df = aggregated_df.merge(avg_generation_df, left_on="eia_id", right_on="plantCode", how="left")
 
+    aggregated_df["wind_power_cubed"] = aggregated_df["climate_annual_windspeed_m_s"] ** 3
+
+    aggregated_df["turbine_density"] = aggregated_df["num_turbines"] / aggregated_df["area"].replace(0, np.nan)
+
     #Final DF - Input + Output features
-    final_df = aggregated_df[WIND_MODEL_FEATURES + WIND_OUTPUT_FEATURES + ["area", "num_turbines"]]
+    final_df = aggregated_df[WIND_MODEL_FEATURES + WIND_OUTPUT_FEATURES]
     final_df.to_csv("data/processed/wind.csv", index=False)
 
-def get_solar_data(path, feature_cols, label_col="avg_annual_generation", batch_size=32, train_frac=0.8):
+def get_data(path, feature_cols, label_col="avg_annual_generation", batch_size=32, train_frac=0.8):
 
     df = pd.read_csv(path)
 
     df = df[df[label_col].notna() & (df[label_col] > 0)].reset_index(drop=True) #delete not na
     df[label_col] = np.log1p(df[label_col]) #TODO log transform labels for now, undo LATER
-    df[feature_cols] = df[feature_cols].astype(float)
-
-    df = df.sample(frac=1).reset_index(drop=True)
-
-    train_size = int(train_frac * len(df))
-
-    X = df[feature_cols].values
-    y = df[label_col].values
-
-    X_train, X_test = X[:train_size], X[train_size:]
-    y_train, y_test = y[:train_size], y[train_size:]
-
-    imputer = SimpleImputer(strategy="median") #Filling NA tilt/azimuth vals
-    X_train = imputer.fit_transform(X_train)
-    X_test  = imputer.transform(X_test)
-
-    scaler = StandardScaler() #Normalize
-    X_train = scaler.fit_transform(X_train)
-    X_test  = scaler.transform(X_test)
-
-    train_dataset = torch.utils.data.TensorDataset(
-        torch.tensor(X_train, dtype=torch.float32),
-        torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
-    )
-    test_dataset = torch.utils.data.TensorDataset(
-        torch.tensor(X_test, dtype=torch.float32),
-        torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
-    )
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
-
-    return train_loader, test_loader, len(feature_cols)
-
-def get_wind_data(path, feature_cols, label_col="avg_annual_generation", batch_size=32, train_frac=0.8):
-
-    df = pd.read_csv(path)
-
-    df = df[df[label_col].notna() & (df[label_col] > 0)].reset_index(drop=True) #delete not na
     df[feature_cols] = df[feature_cols].astype(float)
 
     df = df.sample(frac=1).reset_index(drop=True)

@@ -10,6 +10,8 @@ DEFAULT_CONSTRUCTION_COST_PER_M2_USD = 140.0
 DEFAULT_PACKING_EFFICIENCY = 0.75
 DEFAULT_PERFORMANCE_RATIO = 0.8
 DEFAULT_SUNLIGHT_THRESHOLD_KWH_M2_YR = 1_400.0
+DEFAULT_PANEL_TILT_DEG = 20.0      # median from EIA solar dataset
+DEFAULT_PANEL_AZIMUTH_DEG = 180.0  # south-facing, standard US optimum
 
 
 class Coordinate(BaseModel):
@@ -32,6 +34,8 @@ class SolarAnalysisRequest(BaseModel):
         default=DEFAULT_SUNLIGHT_THRESHOLD_KWH_M2_YR,
         gt=0,
     )
+    panel_tilt_deg: float = Field(default=DEFAULT_PANEL_TILT_DEG, ge=0, le=90)
+    panel_azimuth_deg: float = Field(default=DEFAULT_PANEL_AZIMUTH_DEG, ge=0, le=360)
 
 
 class SolarAnalysisResponse(BaseModel):
@@ -49,3 +53,4 @@ class SolarAnalysisResponse(BaseModel):
     suitability_score: float
     suitable: bool
     suitability_reason: str
+    model_source: str  # "random-forest", "physics-fallback"

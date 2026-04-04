@@ -12,7 +12,6 @@ DEFAULT_CONSTRUCTION_COST_PER_M2_USD = 140.0
 DEFAULT_PACKING_EFFICIENCY = 0.75
 DEFAULT_PERFORMANCE_RATIO = 0.8
 DEFAULT_SUNLIGHT_THRESHOLD_KWH_M2_YR = 1_400.0
-<<<<<<< HEAD
 DEFAULT_WIND_TURBINE_RATING_KW = 3_500.0
 DEFAULT_WIND_TURBINE_COST_USD = 1_850_000.0
 DEFAULT_WIND_SPACING_AREA_M2 = 45_000.0
@@ -20,10 +19,8 @@ DEFAULT_WIND_MIN_SPEED_MPS = 5.5
 DEFAULT_DATA_CENTER_POWER_DENSITY_KW_PER_M2 = 0.055
 DEFAULT_DATA_CENTER_COST_PER_M2_USD = 280.0
 DEFAULT_DATA_CENTER_FIT_OUT_COST_PER_KW_USD = 4_500.0
-=======
 DEFAULT_PANEL_TILT_DEG = 20.0      # median from EIA solar dataset
 DEFAULT_PANEL_AZIMUTH_DEG = 180.0  # south-facing, standard US optimum
->>>>>>> 8170744edd493d09388cddaeb55063072d9771b7
 
 
 class Coordinate(BaseModel):
@@ -66,7 +63,6 @@ class SolarAnalysisResponse(BaseModel):
     suitability_score: float
     suitable: bool
     suitability_reason: str
-<<<<<<< HEAD
 
 
 class DailyGenerationPoint(BaseModel):
@@ -192,6 +188,4 @@ class InfrastructureAnalysisResponse(BaseModel):
     candidates: list[CandidateRegion]
     data_sources: InfrastructureDataSources
     pipeline_notes: list[str]
-=======
     model_source: str  # "random-forest", "physics-fallback"
->>>>>>> 8170744edd493d09388cddaeb55063072d9771b7

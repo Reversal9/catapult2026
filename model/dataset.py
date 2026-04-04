@@ -77,11 +77,6 @@ def get_data(path, feature_cols, label_col="avg_annual_generation", batch_size=3
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    for X_batch, y_batch in train_loader:
-        for i in range(X_batch.shape[1]):
-            corr = torch.corrcoef(torch.stack([X_batch[:, i], y_batch[:, 0]]))[0, 1].item()
-            print(f"Feature {i}: correlation with label = {corr:.4f}")
-
     test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
     input_size = len(feature_cols)

@@ -86,16 +86,19 @@ class Habakkuk(nn.Module):
 
     def __init__(self, input_size: int) -> None:
         super().__init__()
-        self.fc1 = nn.Linear(input_size, 24)
-        self.fc2 = nn.Linear(24, 12)
-        self.fc3 = nn.Linear(12, 6)
-        self.fc4 = nn.Linear(6, 1)
+        self.fc1 = nn.Linear(input_size, 480)
+        self.fc2 = nn.Linear(480, 100)
+        self.fc3 = nn.Linear(100, 24)
+        self.dropout = nn.Dropout(p=0.2)
+        self.fc4 = nn.Linear(24, 6)
+        self.fc5 = nn.Linear(6, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
-        return self.fc4(x)
+        x = F.relu(self.fc4(x))
+        return self.fc5(x)
 
 
 class ModelPredictor:
@@ -178,7 +181,14 @@ class ModelPredictor:
 
         with torch.no_grad():
             # Model output is MWh/yr (trained on EIA generation data).
-            predicted_mwh_yr = float(self._model(x).item())
+            output = self._model(x)
+            flat_output = output.reshape(-1)
+            if flat_output.numel() != 1:
+                raise RuntimeError(
+                    "Habakkuk predictor returned "
+                    f"{flat_output.numel()} outputs for a single sample."
+                )
+            predicted_mwh_yr = float(flat_output[0].item())
 
         predicted_kwh_yr = max(0.0, predicted_mwh_yr) * 1_000.0
         return predicted_kwh_yr, climate

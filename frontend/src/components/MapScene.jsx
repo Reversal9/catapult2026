@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   Circle,
   MapContainer,
@@ -10,6 +10,7 @@ import {
 } from "react-leaflet";
 import MapEvents from "./MapEvents";
 import { markerIcon } from "../map/icons";
+import { rectangleFromTwoPoints } from "../utils/geo";
 
 const CANDIDATE_COLORS = {
   solar: {
@@ -48,6 +49,22 @@ function MapScene({
   landingHidden,
   theme,
 }) {
+  const [dragPreview, setDragPreview] = useState(null);
+
+  const previewP1 = dragPreview?.p1 ?? p1;
+  const previewP2 = dragPreview?.p2 ?? p2;
+  const displayedRegion = useMemo(() => {
+    if (!dragPreview) {
+      return region;
+    }
+
+    return {
+      type: "polygon",
+      points: rectangleFromTwoPoints(previewP1, previewP2),
+      source: "rectangle",
+    };
+  }, [dragPreview, previewP1, previewP2, region]);
+
   const tilesUrl =
     theme === "light"
       ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -75,10 +92,10 @@ function MapScene({
         />
         <MapEvents onMapClick={onMapClick} onMapMove={onMapMove} />
 
-        {region.type === "circle" ? (
+        {displayedRegion.type === "circle" ? (
           <Circle
-            center={[region.center.lat, region.center.lng]}
-            radius={region.radiusMeters}
+            center={[displayedRegion.center.lat, displayedRegion.center.lng]}
+            radius={displayedRegion.radiusMeters}
             eventHandlers={{ click: () => result && onToggleStats() }}
             pathOptions={{
               color: "#1b7d67",
@@ -89,7 +106,7 @@ function MapScene({
           />
         ) : (
           <Polygon
-            positions={region.points}
+            positions={displayedRegion.points}
             eventHandlers={{ click: () => result && onToggleStats() }}
             pathOptions={{
               color: "#1b7d67",
@@ -131,22 +148,42 @@ function MapScene({
         )}
 
         <Marker
-          position={[p1.lat, p1.lng]}
+          position={[previewP1.lat, previewP1.lng]}
           icon={markerIcon("#4ab394")}
           draggable
           eventHandlers={{
-            drag: (event) => onApplyCoord("p1", event.target.getLatLng()),
-            dragend: (event) => onApplyCoord("p1", event.target.getLatLng()),
+            dragstart: () => {
+              setDragPreview({ p1, p2 });
+            },
+            drag: (event) =>
+              setDragPreview((current) => ({
+                p1: event.target.getLatLng(),
+                p2: current?.p2 ?? p2,
+              })),
+            dragend: (event) => {
+              setDragPreview(null);
+              onApplyCoord("p1", event.target.getLatLng());
+            },
             click: onLandingInteraction,
           }}
         />
         <Marker
-          position={[p2.lat, p2.lng]}
+          position={[previewP2.lat, previewP2.lng]}
           icon={markerIcon("#c09244")}
           draggable
           eventHandlers={{
-            drag: (event) => onApplyCoord("p2", event.target.getLatLng()),
-            dragend: (event) => onApplyCoord("p2", event.target.getLatLng()),
+            dragstart: () => {
+              setDragPreview({ p1, p2 });
+            },
+            drag: (event) =>
+              setDragPreview((current) => ({
+                p1: current?.p1 ?? p1,
+                p2: event.target.getLatLng(),
+              })),
+            dragend: (event) => {
+              setDragPreview(null);
+              onApplyCoord("p2", event.target.getLatLng());
+            },
             click: onLandingInteraction,
           }}
         />

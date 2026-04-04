@@ -1,10 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import Globe from 'react-globe.gl'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Circle,
+  MapContainer,
+  Marker,
+  Polygon,
+  Polyline,
+  Popup,
+  TileLayer,
+  useMapEvents,
+} from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import './App.css'
 
 const SOLAR_MODELS = ['SunForge SF-450', 'HelioMax HX-620', 'Atlas Bifacial AB-700']
 const WIND_MODELS = ['AeroSpin 2MW', 'VentoCore 3.5MW', 'SkyGrid 5MW']
-const PIN_COLORS = { p1: '#76f5c8', p2: '#ffd07c' }
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 const normLng = (lng) => {
@@ -13,6 +23,9 @@ const normLng = (lng) => {
   while (value < -180) value += 360
   return value
 }
+
+const DMS_RE =
+  /^\s*(\d{1,3})[°\s]+(\d{1,2})['\s]+(\d{1,2}(?:\.\d+)?)"?\s*([NnSs])\s+(\d{1,3})[°\s]+(\d{1,2})['\s]+(\d{1,2}(?:\.\d+)?)"?\s*([EeWw])\s*$/
 
 const toDmsPart = (raw, isLat) => {
   const value = Math.abs(raw)
@@ -26,31 +39,23 @@ const toDmsPart = (raw, isLat) => {
 
 const formatDmsPair = ({ lat, lng }) => `${toDmsPart(lat, true)} ${toDmsPart(lng, false)}`
 
-const DMS_RE =
-  /^\s*(\d{1,3})[°\s]+(\d{1,2})['\s]+(\d{1,2}(?:\.\d+)?)"?\s*([NnSs])\s+(\d{1,3})[°\s]+(\d{1,2})['\s]+(\d{1,2}(?:\.\d+)?)"?\s*([EeWw])\s*$/
-
 const parseDmsPair = (value) => {
-  const m = value.match(DMS_RE)
-  if (!m) return null
+  const match = value.match(DMS_RE)
+  if (!match) {
+    return { ok: false, message: 'Use DMS format: 43°43\'25.7"N 80°11\'38.5"W' }
+  }
 
-  const latDeg = Number(m[1])
-  const latMin = Number(m[2])
-  const latSec = Number(m[3])
-  const latHem = m[4].toUpperCase()
-  const lngDeg = Number(m[5])
-  const lngMin = Number(m[6])
-  const lngSec = Number(m[7])
-  const lngHem = m[8].toUpperCase()
+  const latDeg = Number(match[1])
+  const latMin = Number(match[2])
+  const latSec = Number(match[3])
+  const latHem = match[4].toUpperCase()
+  const lngDeg = Number(match[5])
+  const lngMin = Number(match[6])
+  const lngSec = Number(match[7])
+  const lngHem = match[8].toUpperCase()
 
-  if (
-    latDeg > 90 ||
-    lngDeg > 180 ||
-    latMin >= 60 ||
-    lngMin >= 60 ||
-    latSec >= 60 ||
-    lngSec >= 60
-  ) {
-    return null
+  if (latDeg > 90 || lngDeg > 180 || latMin >= 60 || lngMin >= 60 || latSec >= 60 || lngSec >= 60) {
+    return { ok: false, message: 'Latitude/longitude values are out of range.' }
   }
 
   let lat = latDeg + latMin / 60 + latSec / 3600
@@ -58,153 +63,201 @@ const parseDmsPair = (value) => {
   if (latHem === 'S') lat *= -1
   if (lngHem === 'W') lng *= -1
 
+  return { ok: true, value: { lat, lng } }
+}
+
+const haversineMeters = (a, b) => {
+  const radius = 6371000
+  const lat1 = (a.lat * Math.PI) / 180
+  const lat2 = (b.lat * Math.PI) / 180
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180
+  const sinLat = Math.sin(dLat / 2)
+  const sinLng = Math.sin(dLng / 2)
+  const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng
+  return 2 * radius * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+const markerIcon = (color) =>
+  L.divIcon({
+    className: 'map-pin-icon',
+    html: `<span style="--pin:${color}"></span>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  })
+
+const rectangleFromTwoPoints = (a, b) => {
+  const south = Math.min(a.lat, b.lat)
+  const north = Math.max(a.lat, b.lat)
+  const west = Math.min(a.lng, b.lng)
+  const east = Math.max(a.lng, b.lng)
+  return [
+    [south, west],
+    [south, east],
+    [north, east],
+    [north, west],
+  ]
+}
+
+const centroid = (points) => {
+  if (!points.length) return { lat: 0, lng: 0 }
+  const lat = points.reduce((sum, p) => sum + p[0], 0) / points.length
+  const lng = points.reduce((sum, p) => sum + p[1], 0) / points.length
   return { lat, lng }
 }
 
-const boundsFromTwoCoords = (p1, p2) => ({
-  south: Math.min(p1.lat, p2.lat),
-  north: Math.max(p1.lat, p2.lat),
-  west: Math.min(p1.lng, p2.lng),
-  east: Math.max(p1.lng, p2.lng),
-})
+const polygonAreaKm2 = (points) => {
+  if (points.length < 3) return 0
+  const c = centroid(points)
+  const latScale = 111320
+  const lngScale = 111320 * Math.cos((c.lat * Math.PI) / 180)
+  let twiceArea = 0
 
-const rectangleFeature = (bounds) => ({
-  type: 'Feature',
-  properties: { mode: 'rectangle' },
-  geometry: {
-    type: 'Polygon',
-    coordinates: [[
-      [bounds.west, bounds.south],
-      [bounds.east, bounds.south],
-      [bounds.east, bounds.north],
-      [bounds.west, bounds.north],
-      [bounds.west, bounds.south],
-    ]],
-  },
-})
+  for (let i = 0; i < points.length; i += 1) {
+    const j = (i + 1) % points.length
+    const x1 = points[i][1] * lngScale
+    const y1 = points[i][0] * latScale
+    const x2 = points[j][1] * lngScale
+    const y2 = points[j][0] * latScale
+    twiceArea += x1 * y2 - x2 * y1
+  }
 
-const polygonFeature = (coords, mode = 'polygon') => ({
-  type: 'Feature',
-  properties: { mode },
-  geometry: {
-    type: 'Polygon',
-    coordinates: [[...coords, coords[0]]],
-  },
-})
-
-const linePath = (coords) => ({
-  id: 'draft',
-  points: coords.map((c) => [c.lat, c.lng]),
-})
-
-const circleFromTwoPoints = (center, edge, segments = 48) => {
-  const latDist = edge.lat - center.lat
-  const lonDist = (edge.lng - center.lng) * Math.cos((center.lat * Math.PI) / 180)
-  const radiusDeg = Math.sqrt(latDist * latDist + lonDist * lonDist)
-  if (radiusDeg <= 0.001) return null
-
-  const points = Array.from({ length: segments }, (_, i) => {
-    const angle = (i / segments) * Math.PI * 2
-    const lat = center.lat + radiusDeg * Math.sin(angle)
-    const lon = normLng(center.lng + (radiusDeg * Math.cos(angle)) / Math.cos((center.lat * Math.PI) / 180))
-    return { lat: clamp(lat, -89.999, 89.999), lng: lon }
-  })
-  return points
+  return Math.abs(twiceArea / 2) / 1_000_000
 }
 
-const centerFromBounds = (bounds) => ({
-  lat: (bounds.south + bounds.north) / 2,
-  lng: (bounds.east + bounds.west) / 2,
-})
-
-const boundsFromFeature = (feature) => {
-  const ring = feature.geometry.coordinates[0]
-  const lats = ring.map((c) => c[1])
-  const lngs = ring.map((c) => c[0])
-  return {
-    south: Math.min(...lats),
-    north: Math.max(...lats),
-    west: Math.min(...lngs),
-    east: Math.max(...lngs),
+const regionAreaKm2 = (region) => {
+  if (region.type === 'circle') {
+    const radiusKm = region.radiusMeters / 1000
+    return Math.PI * radiusKm * radiusKm
   }
+  return polygonAreaKm2(region.points)
+}
+
+const regionCenter = (region) => {
+  if (region.type === 'circle') return region.center
+  return centroid(region.points)
+}
+
+function MapEvents({ onMapClick, onMapMove }) {
+  useMapEvents({
+    click: (event) => onMapClick(event.latlng),
+    movestart: onMapMove,
+    zoomstart: onMapMove,
+  })
+  return null
 }
 
 function App() {
-  const globeRef = useRef(null)
-  const [landingVisible, setLandingVisible] = useState(true)
+  const mapRef = useRef(null)
+  const popupRef = useRef(null)
+
+  const [theme, setTheme] = useState('light')
+  const [landingState, setLandingState] = useState('visible')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [activeCoordField, setActiveCoordField] = useState(null)
+  const [userMovedMap, setUserMovedMap] = useState(false)
+
   const [p1, setP1] = useState({ lat: 43.7238, lng: -80.194 })
   const [p2, setP2] = useState({ lat: 43.6118, lng: -80.0706 })
   const [p1Text, setP1Text] = useState(formatDmsPair({ lat: 43.7238, lng: -80.194 }))
   const [p2Text, setP2Text] = useState(formatDmsPair({ lat: 43.6118, lng: -80.0706 }))
-  const [activeCoordField, setActiveCoordField] = useState(null)
-  const [draggingPin, setDraggingPin] = useState(null)
-  const [drawMode, setDrawMode] = useState('none')
-  const [drawPoints, setDrawPoints] = useState([])
-  const [regionFeature, setRegionFeature] = useState(null)
-  const [equipmentTypes, setEquipmentTypes] = useState(['solar', 'turbine'])
-  const [solarModelMode, setSolarModelMode] = useState('select')
-  const [windModelMode, setWindModelMode] = useState('select')
-  const [solarModel, setSolarModel] = useState(SOLAR_MODELS[0])
-  const [windModel, setWindModel] = useState(WIND_MODELS[0])
-  const [isSearching, setIsSearching] = useState(false)
+  const [p1Error, setP1Error] = useState('')
+  const [p2Error, setP2Error] = useState('')
+
+  const [drawMode, setDrawMode] = useState('circle')
+  const [draftPoints, setDraftPoints] = useState([])
+  const [region, setRegion] = useState({
+    type: 'polygon',
+    points: rectangleFromTwoPoints({ lat: 43.7238, lng: -80.194 }, { lat: 43.6118, lng: -80.0706 }),
+    source: 'rectangle',
+  })
+
+  const [energyType, setEnergyType] = useState('')
+  const [modelMode, setModelMode] = useState('predefined')
+  const [selectedModel, setSelectedModel] = useState('')
+  const [customModel, setCustomModel] = useState('')
+
+  const [submitError, setSubmitError] = useState('')
+  const [searching, setSearching] = useState(false)
   const [statsVisible, setStatsVisible] = useState(false)
-  const [dummyStats, setDummyStats] = useState(null)
-  const [userMovedCamera, setUserMovedCamera] = useState(false)
-  const [searchCount, setSearchCount] = useState(0)
-  const [cameraLock, setCameraLock] = useState(true)
+  const [result, setResult] = useState(null)
 
-  const rectangleFeatureMemo = useMemo(() => rectangleFeature(boundsFromTwoCoords(p1, p2)), [p1, p2])
-  const activeFeature = regionFeature || rectangleFeatureMemo
-  const selectionBounds = useMemo(() => boundsFromFeature(activeFeature), [activeFeature])
+  const tilesUrl =
+    theme === 'light'
+      ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+      : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+  const tileAttribution =
+    theme === 'light'
+      ? '&copy; OpenStreetMap contributors'
+      : '&copy; OpenStreetMap contributors &copy; CARTO'
 
-  const pinPoints = useMemo(
-    () => [
-      { id: 'p1', lat: p1.lat, lng: p1.lng, color: PIN_COLORS.p1 },
-      { id: 'p2', lat: p2.lat, lng: p2.lng, color: PIN_COLORS.p2 },
-    ],
-    [p1, p2],
-  )
+  const enterApp = useCallback(() => {
+    if (landingState !== 'visible') return
+    setLandingState('fading')
+    window.setTimeout(() => setLandingState('hidden'), 320)
+  }, [landingState])
 
-  const drawPaths = useMemo(() => {
-    if (!drawPoints.length) return []
-    return [linePath(drawPoints)]
-  }, [drawPoints])
+  useEffect(() => {
+    if (landingState === 'hidden') return undefined
+    const onKey = () => enterApp()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [enterApp, landingState])
 
-  const onFirstInteraction = () => setLandingVisible(false)
-
-  const setPin = (id, coord) => {
+  const applyCoord = (id, coord) => {
     const next = { lat: clamp(coord.lat, -89.999, 89.999), lng: normLng(coord.lng) }
+
     if (id === 'p1') {
       setP1(next)
       setP1Text(formatDmsPair(next))
+      setP1Error('')
     } else {
       setP2(next)
       setP2Text(formatDmsPair(next))
+      setP2Error('')
     }
+
+    setRegion({ type: 'polygon', points: rectangleFromTwoPoints(id === 'p1' ? next : p1, id === 'p2' ? next : p2), source: 'rectangle' })
   }
 
-  const updateFromText = (id, value) => {
+  const onCoordChange = (id, value) => {
     if (id === 'p1') setP1Text(value)
     else setP2Text(value)
+
     const parsed = parseDmsPair(value)
-    if (parsed) setPin(id, parsed)
+    if (!parsed.ok) {
+      if (id === 'p1') setP1Error(parsed.message)
+      else setP2Error(parsed.message)
+      return
+    }
+
+    applyCoord(id, parsed.value)
   }
 
-  const handleGlobeClick = (coords) => {
-    onFirstInteraction()
+  const onMapClick = (latlng) => {
+    if (landingState !== 'hidden') enterApp()
 
     if (activeCoordField) {
-      setPin(activeCoordField, coords)
+      applyCoord(activeCoordField, latlng)
       setActiveCoordField(null)
       return
     }
 
+    if (!advancedOpen) return
+
     if (drawMode === 'circle') {
-      setDrawPoints((current) => {
-        const next = [...current, coords]
+      setDraftPoints((current) => {
+        const next = [...current, [latlng.lat, latlng.lng]]
         if (next.length === 2) {
-          const circle = circleFromTwoPoints(next[0], next[1])
-          if (circle) setRegionFeature(polygonFeature(circle, 'circle'))
+          setRegion({
+            type: 'circle',
+            center: { lat: next[0][0], lng: next[0][1] },
+            radiusMeters: haversineMeters(
+              { lat: next[0][0], lng: next[0][1] },
+              { lat: next[1][0], lng: next[1][1] },
+            ),
+            source: 'circle',
+          })
           return []
         }
         return next
@@ -213,315 +266,349 @@ function App() {
     }
 
     if (drawMode === 'polygon') {
-      setDrawPoints((current) => [...current, coords])
+      setDraftPoints((current) => [...current, [latlng.lat, latlng.lng]])
     }
   }
 
   const finalizePolygon = () => {
-    if (drawPoints.length < 3) return
-    setRegionFeature(polygonFeature(drawPoints, 'polygon'))
-    setDrawPoints([])
+    if (draftPoints.length < 3) {
+      setSubmitError('Polygon needs at least three points.')
+      return
+    }
+    setRegion({ type: 'polygon', points: draftPoints, source: 'polygon' })
+    setDraftPoints([])
+    setSubmitError('')
   }
 
-  const clearDrawing = () => {
-    setDrawMode('none')
-    setDrawPoints([])
-    setRegionFeature(null)
+  const removeLastPolygonPoint = () => {
+    setDraftPoints((current) => current.slice(0, -1))
   }
 
-  const toggleEquipment = (value) => {
-    setEquipmentTypes((current) =>
-      current.includes(value) ? current.filter((v) => v !== value) : [...current, value],
-    )
+  const useRectangleRegion = () => {
+    setRegion({ type: 'polygon', points: rectangleFromTwoPoints(p1, p2), source: 'rectangle' })
+    setDraftPoints([])
+    setSubmitError('')
   }
 
-  const refocusSelection = (duration = 950) => {
-    const center = centerFromBounds(selectionBounds)
-    globeRef.current?.pointOfView({ lat: center.lat, lng: center.lng, altitude: 1.35 }, duration)
-    setCameraLock(false)
-    window.setTimeout(() => setCameraLock(true), duration + 60)
-  }
+  const mapBounds = useMemo(() => {
+    if (region.type === 'circle') {
+      const c = region.center
+      const radiusKm = region.radiusMeters / 1000
+      const latDelta = radiusKm / 111.32
+      const lngDelta = radiusKm / (111.32 * Math.max(0.25, Math.cos((c.lat * Math.PI) / 180)))
+      return [
+        [c.lat - latDelta, c.lng - lngDelta],
+        [c.lat + latDelta, c.lng + lngDelta],
+      ]
+    }
 
-  const runSearch = () => {
-    setIsSearching(true)
-    setStatsVisible(false)
-    refocusSelection(1000)
+    return L.latLngBounds(region.points)
+  }, [region])
+
+  const fitRegion = useCallback(
+    (duration = 0.6) => {
+      const map = mapRef.current
+      if (!map) return
+
+      map.fitBounds(mapBounds, {
+        padding: [56, 56],
+        animate: true,
+        duration,
+      })
+    },
+    [mapBounds],
+  )
+
+  const modelOptions = energyType === 'solar' ? SOLAR_MODELS : energyType === 'wind' ? WIND_MODELS : []
+  const modelValue = modelMode === 'predefined' ? selectedModel : customModel.trim()
+
+  const isReady =
+    !!energyType && !!modelValue && !p1Error && !p2Error && !!region &&
+    ((region.type !== 'circle' || region.radiusMeters > 1) && (region.type !== 'polygon' || region.points.length >= 3))
+
+  const runAnalysis = () => {
+    const errors = []
+    if (p1Error || p2Error) errors.push('Fix coordinate formatting first.')
+    if (!energyType) errors.push('Choose an energy type.')
+    if (!modelValue) errors.push('Choose or enter a model.')
+    if (!region) errors.push('Define a region on the map.')
+
+    if (errors.length) {
+      setSubmitError(errors.join(' '))
+      return
+    }
+
+    setSubmitError('')
+    setSearching(true)
+    fitRegion(0.55)
 
     window.setTimeout(() => {
-      const areaApprox = Math.max(
-        1,
-        Math.abs(selectionBounds.north - selectionBounds.south) *
-          Math.abs(selectionBounds.east - selectionBounds.west) *
-          8200,
-      )
-      const result = {
-        category:
-          equipmentTypes.length === 2
-            ? 'hybrid'
-            : equipmentTypes[0] === 'solar'
-              ? 'solar'
-              : 'wind',
-        areaKm2: areaApprox,
-        powerMWhYr: Math.round(areaApprox * (equipmentTypes.length === 2 ? 1300 : 890)),
-        placements: Math.round(areaApprox * (equipmentTypes.includes('solar') ? 115 : 4.2)),
-        rating: ['below average', 'average', 'better than average'][searchCount % 3],
-      }
-      setDummyStats(result)
-      setSearchCount((count) => count + 1)
-      setIsSearching(false)
+      const areaKm2 = Math.max(0.1, regionAreaKm2(region))
+      const isSolar = energyType === 'solar'
+      const placements = isSolar ? Math.floor(areaKm2 * 145) : Math.floor(areaKm2 * 4.6)
+      const equipmentCost = isSolar ? placements * 900 : placements * 1_850_000
+      const constructionCost = isSolar ? areaKm2 * 430_000 : areaKm2 * 680_000
+      const annualMWh = isSolar ? areaKm2 * 1_180 : areaKm2 * 4_900
+
+      setResult({
+        areaKm2,
+        placements,
+        equipmentCost,
+        constructionCost,
+        annualMWh,
+        label: isSolar ? 'Solar panels' : 'Wind turbines',
+      })
+      setSearching(false)
       setStatsVisible(true)
-    }, 1250)
+    }, 900)
   }
 
-  useEffect(() => {
-    if (!draggingPin) return
-
-    const onMove = (event) => {
-      const coords = globeRef.current?.toGlobeCoords(event.clientX, event.clientY)
-      if (!coords) return
-      setPin(draggingPin, coords)
-    }
-
-    const onUp = () => setDraggingPin(null)
-
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [draggingPin])
+  const popupPosition = useMemo(() => {
+    const c = regionCenter(region)
+    return [c.lat, c.lng]
+  }, [region])
 
   useEffect(() => {
-    const onKey = () => setLandingVisible(false)
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  useEffect(() => {
-    if (userMovedCamera || isSearching || statsVisible) return
-    refocusSelection(700)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectionBounds.south, selectionBounds.north, selectionBounds.west, selectionBounds.east])
+    if (!mapRef.current) return
+    if (searching || statsVisible || userMovedMap) return
+    fitRegion(0)
+  }, [fitRegion, searching, statsVisible, userMovedMap])
 
   return (
-    <main className="immersive-root" onPointerDown={onFirstInteraction}>
-      <Globe
-        ref={globeRef}
-        width={window.innerWidth}
-        height={window.innerHeight}
-        globeImageUrl="https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
-        bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
-        backgroundImageUrl="https://unpkg.com/three-globe/example/img/night-sky.png"
-        polygonsData={[activeFeature]}
-        polygonCapColor={() => 'rgba(118, 245, 200, 0.18)'}
-        polygonSideColor={() => 'rgba(68, 200, 158, 0.25)'}
-        polygonStrokeColor={() => '#7cf5cd'}
-        polygonAltitude={() => 0.012}
-        pointsData={pinPoints}
-        pointLat="lat"
-        pointLng="lng"
-        pointColor="color"
-        pointRadius={0.42}
-        pointAltitude={() => 0.034}
-        pointLabel={(d) => `${d.id.toUpperCase()}<br/>${formatDmsPair({ lat: d.lat, lng: d.lng })}`}
-        onPointClick={(point) => {
-          onFirstInteraction()
-          setDraggingPin(point.id)
-        }}
-        pathsData={drawPaths}
-        pathPoints="points"
-        pathPointLat={(arr) => arr[0]}
-        pathPointLng={(arr) => arr[1]}
-        pathPointAlt={() => 0.015}
-        pathStroke={() => 0.52}
-        pathColor={() => '#ffd07c'}
-        onGlobeClick={handleGlobeClick}
-        onPolygonClick={() => {
-          if (dummyStats) setStatsVisible((v) => !v)
-        }}
-        onZoom={() => {
-          if (!cameraLock) return
-          setUserMovedCamera(true)
-        }}
-      />
+    <main className={`app-root theme-${theme}`}>
+      <div className="map-layer" aria-hidden={landingState !== 'hidden'}>
+        <MapContainer
+          className="map-canvas"
+          center={[43.67, -80.13]}
+          zoom={10}
+          zoomControl
+          scrollWheelZoom
+          whenReady={(event) => {
+            mapRef.current = event.target
+            fitRegion(0)
+          }}
+        >
+          <TileLayer url={tilesUrl} attribution={tileAttribution} maxZoom={20} subdomains={['a', 'b', 'c']} />
+          <MapEvents onMapClick={onMapClick} onMapMove={() => setUserMovedMap(true)} />
 
-      {landingVisible && (
-        <section className="landing-layer" role="dialog" aria-label="Welcome">
-          <div className="landing-card">
-            <p className="tag">CATAPULT 2026</p>
-            <h1>Clean Energy Mapper</h1>
-            <p>Predictive siting for solar and wind fields on an interactive earth canvas.</p>
-            <small>Click, tap, or press any key to begin.</small>
+          {region.type === 'circle' ? (
+            <Circle
+              center={[region.center.lat, region.center.lng]}
+              radius={region.radiusMeters}
+              eventHandlers={{ click: () => result && setStatsVisible((value) => !value) }}
+              pathOptions={{ color: '#1b7d67', weight: 2, fillColor: '#65c9ad', fillOpacity: 0.16 }}
+            />
+          ) : (
+            <Polygon
+              positions={region.points}
+              eventHandlers={{ click: () => result && setStatsVisible((value) => !value) }}
+              pathOptions={{ color: '#1b7d67', weight: 2, fillColor: '#65c9ad', fillOpacity: 0.14 }}
+            />
+          )}
+
+          {draftPoints.length > 0 && (
+            <Polyline positions={draftPoints} pathOptions={{ color: '#b17d2f', weight: 2, dashArray: '5 7' }} />
+          )}
+
+          <Marker
+            position={[p1.lat, p1.lng]}
+            icon={markerIcon('#4ab394')}
+            draggable
+            eventHandlers={{
+              drag: (event) => applyCoord('p1', event.target.getLatLng()),
+              dragend: (event) => applyCoord('p1', event.target.getLatLng()),
+            }}
+          />
+          <Marker
+            position={[p2.lat, p2.lng]}
+            icon={markerIcon('#c09244')}
+            draggable
+            eventHandlers={{
+              drag: (event) => applyCoord('p2', event.target.getLatLng()),
+              dragend: (event) => applyCoord('p2', event.target.getLatLng()),
+            }}
+          />
+
+          {statsVisible && result && (
+            <Popup
+              ref={popupRef}
+              position={popupPosition}
+              closeButton
+              autoClose={false}
+              closeOnClick={false}
+              eventHandlers={{ remove: () => setStatsVisible(false) }}
+            >
+              <div className="result-popup">
+                <h3>{result.label} Estimate</h3>
+                <p>Area: {result.areaKm2.toFixed(2)} km²</p>
+                <p>Capacity fit: {result.placements.toLocaleString()}</p>
+                <p>Construction cost: ${result.constructionCost.toLocaleString()}</p>
+                <p>Equipment cost: ${result.equipmentCost.toLocaleString()}</p>
+                <p>Estimated production: {result.annualMWh.toLocaleString()} MWh/year</p>
+              </div>
+            </Popup>
+          )}
+        </MapContainer>
+      </div>
+
+      <div className="ui-layer">
+        <header className="top-strip">
+          <div>
+            <h1>Renewables Site Scout</h1>
+            <p>Select a region and estimate practical solar or wind deployment outcomes.</p>
+          </div>
+          <div className="top-actions">
+            <button type="button" onClick={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}>
+              {theme === 'light' ? 'Dark mode' : 'Light mode'}
+            </button>
+            {userMovedMap && (
+              <button
+                type="button"
+                onClick={() => {
+                  fitRegion(0.55)
+                  setUserMovedMap(false)
+                }}
+              >
+                Refocus region
+              </button>
+            )}
+          </div>
+        </header>
+
+        <section className="bottom-panel" aria-label="Inputs">
+          <div className="coords-row">
+            <label>
+              Point 1
+              <input
+                value={p1Text}
+                onChange={(event) => onCoordChange('p1', event.target.value)}
+                onFocus={() => setActiveCoordField('p1')}
+                placeholder={'43°43\'25.7"N 80°11\'38.5"W'}
+              />
+              {p1Error && <small className="field-error">{p1Error}</small>}
+            </label>
+
+            <label>
+              Point 2
+              <input
+                value={p2Text}
+                onChange={(event) => onCoordChange('p2', event.target.value)}
+                onFocus={() => setActiveCoordField('p2')}
+                placeholder={'43°43\'25.7"N 80°11\'38.5"W'}
+              />
+              {p2Error && <small className="field-error">{p2Error}</small>}
+            </label>
+          </div>
+
+          <div className="advanced-block">
+            <button
+              type="button"
+              className={advancedOpen ? 'expanded' : ''}
+              onClick={() => setAdvancedOpen((value) => !value)}
+            >
+              Advanced Settings
+            </button>
+
+            <div className={`advanced-menu ${advancedOpen ? 'open' : ''}`}>
+              <div className="mode-row">
+                <button type="button" className={drawMode === 'circle' ? 'active' : ''} onClick={() => { setDrawMode('circle'); setDraftPoints([]) }}>
+                  Circle tool
+                </button>
+                <button type="button" className={drawMode === 'polygon' ? 'active' : ''} onClick={() => { setDrawMode('polygon'); setDraftPoints([]) }}>
+                  Polygon tool
+                </button>
+                <button type="button" onClick={finalizePolygon}>
+                  Close polygon
+                </button>
+                <button type="button" onClick={removeLastPolygonPoint} disabled={!draftPoints.length}>
+                  Undo point
+                </button>
+                <button type="button" onClick={useRectangleRegion}>
+                  Use rectangle
+                </button>
+              </div>
+              <p className="helper">Click a coordinate field then map to populate it. In circle mode click center then edge. In polygon mode click vertices then Close polygon.</p>
+            </div>
+          </div>
+
+          <div className="energy-row">
+            <label>
+              Energy type
+              <select
+                value={energyType}
+                onChange={(event) => {
+                  const nextType = event.target.value
+                  setEnergyType(nextType)
+                  setSelectedModel('')
+                  setCustomModel('')
+                }}
+              >
+                <option value="">Select type</option>
+                <option value="solar">Solar panels</option>
+                <option value="wind">Wind turbines</option>
+              </select>
+            </label>
+
+            {energyType && (
+              <label>
+                Model source
+                <select value={modelMode} onChange={(event) => setModelMode(event.target.value)}>
+                  <option value="predefined">Predefined models</option>
+                  <option value="custom">Custom specification</option>
+                </select>
+              </label>
+            )}
+
+            {energyType && modelMode === 'predefined' && (
+              <label>
+                Model
+                <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
+                  <option value="">Select model</option>
+                  {modelOptions.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {energyType && modelMode === 'custom' && (
+              <label>
+                Custom spec
+                <input
+                  value={customModel}
+                  onChange={(event) => setCustomModel(event.target.value)}
+                  placeholder="Enter custom model or specs"
+                />
+              </label>
+            )}
+          </div>
+
+          {submitError && <p className="submit-error">{submitError}</p>}
+
+          <div className="actions-row">
+            <button type="button" className="primary" disabled={!isReady || searching} onClick={runAnalysis}>
+              {searching ? 'Computing...' : 'Search'}
+            </button>
           </div>
         </section>
-      )}
+      </div>
 
-      <section className="overlay-top">
-        <h2>Region Selection</h2>
-        <p>
-          Set two corner coordinates, or draw a circle/polygon. Click a coordinate field then click the globe to pick.
-        </p>
-      </section>
-
-      <section className="overlay-bottom">
-        <div className="coord-row">
-          <label>
-            Position 1
-            <input
-              value={p1Text}
-              onChange={(event) => updateFromText('p1', event.target.value)}
-              onFocus={() => setActiveCoordField('p1')}
-              placeholder={`43°43'25.7"N 80°11'38.5"W`}
-            />
-          </label>
-          <label>
-            Position 2
-            <input
-              value={p2Text}
-              onChange={(event) => updateFromText('p2', event.target.value)}
-              onFocus={() => setActiveCoordField('p2')}
-              placeholder={`43°43'25.7"N 80°11'38.5"W`}
-            />
-          </label>
-        </div>
-
-        <div className="draw-row">
-          <button type="button" className={drawMode === 'circle' ? 'active' : ''} onClick={() => setDrawMode('circle')}>
-            Draw Circle
-          </button>
-          <button type="button" className={drawMode === 'polygon' ? 'active' : ''} onClick={() => setDrawMode('polygon')}>
-            Draw Polygon
-          </button>
-          <button type="button" onClick={finalizePolygon}>
-            Finalize Polygon
-          </button>
-          <button type="button" onClick={clearDrawing}>
-            Clear Drawing
-          </button>
-        </div>
-
-        <div className="equip-row">
-          <span>Equipment Types</span>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={equipmentTypes.includes('solar')}
-              onChange={() => toggleEquipment('solar')}
-            />
-            Solar
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={equipmentTypes.includes('turbine')}
-              onChange={() => toggleEquipment('turbine')}
-            />
-            Turbine
-          </label>
-        </div>
-
-        <div className="model-row">
-          {equipmentTypes.includes('solar') && (
-            <div className="model-card">
-              <p>Solar Model</p>
-              <div className="mode-row">
-                <button
-                  type="button"
-                  className={solarModelMode === 'select' ? 'active' : ''}
-                  onClick={() => setSolarModelMode('select')}
-                >
-                  Select
-                </button>
-                <button
-                  type="button"
-                  className={solarModelMode === 'type' ? 'active' : ''}
-                  onClick={() => setSolarModelMode('type')}
-                >
-                  Type
-                </button>
-              </div>
-              {solarModelMode === 'select' ? (
-                <select value={solarModel} onChange={(event) => setSolarModel(event.target.value)}>
-                  {SOLAR_MODELS.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input value={solarModel} onChange={(event) => setSolarModel(event.target.value)} />
-              )}
-            </div>
-          )}
-
-          {equipmentTypes.includes('turbine') && (
-            <div className="model-card">
-              <p>Turbine Model</p>
-              <div className="mode-row">
-                <button
-                  type="button"
-                  className={windModelMode === 'select' ? 'active' : ''}
-                  onClick={() => setWindModelMode('select')}
-                >
-                  Select
-                </button>
-                <button
-                  type="button"
-                  className={windModelMode === 'type' ? 'active' : ''}
-                  onClick={() => setWindModelMode('type')}
-                >
-                  Type
-                </button>
-              </div>
-              {windModelMode === 'select' ? (
-                <select value={windModel} onChange={(event) => setWindModel(event.target.value)}>
-                  {WIND_MODELS.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input value={windModel} onChange={(event) => setWindModel(event.target.value)} />
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="action-row">
-          <button type="button" className="search" onClick={runSearch}>
-            Search
-          </button>
-          {userMovedCamera && (
-            <button type="button" className="refocus" onClick={() => {
-              setUserMovedCamera(false)
-              refocusSelection(850)
-            }}>
-              Refocus Region
-            </button>
-          )}
-        </div>
-      </section>
-
-      {isSearching && (
-        <div className="search-overlay">
-          <div className="search-popup">
-            <p>Zooming to region and calculating dummy stats...</p>
+      {landingState !== 'hidden' && (
+        <section
+          className={`landing ${landingState === 'fading' ? 'fading' : ''}`}
+          role="dialog"
+          aria-label="Welcome"
+          onClick={enterApp}
+        >
+          <div className="landing-card">
+            <p className="kicker">Catapult 2026</p>
+            <h2>Renewables Site Scout</h2>
+            <p>Plan clean-energy sites with precise map-based region selection and fast feasibility estimates.</p>
+            <small>Click anywhere or press any key to begin.</small>
           </div>
-        </div>
-      )}
-
-      {statsVisible && dummyStats && !isSearching && (
-        <aside className="stats-popup" onClick={() => setStatsVisible(false)}>
-          <h3>Simulation Result</h3>
-          <p>Category: {dummyStats.category}</p>
-          <p>Region Area: {dummyStats.areaKm2.toFixed(1)} km²</p>
-          <p>Total Yield: {dummyStats.powerMWhYr.toLocaleString()} MWh/year</p>
-          <p>Potential Placements: {dummyStats.placements.toLocaleString()}</p>
-          <p>Performance: {dummyStats.rating}</p>
-          <small>Click this panel or selected region to close/open.</small>
-        </aside>
+        </section>
       )}
     </main>
   )

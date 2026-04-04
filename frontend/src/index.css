@@ -1,17 +1,9 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
 
 :root {
-  --ink: #f8f0d8;
-  --ink-soft: #c9d5df;
-  --ink-dim: #8ea3b4;
-  --line: #254258;
-  --line-bright: #67d4c7;
-  --panel: rgba(7, 16, 26, 0.86);
-  --accent-2: #ffad26;
-
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-family: "Inter", "Segoe UI", sans-serif;
   font-size: 16px;
-  line-height: 1.45;
+  line-height: 1.5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -25,11 +17,8 @@
 body {
   margin: 0;
   min-height: 100svh;
-  background:
-    radial-gradient(circle at 15% 15%, #1b3549, transparent 45%),
-    radial-gradient(circle at 80% 80%, #10293f, transparent 55%),
-    linear-gradient(180deg, #06111d 0%, #050b13 100%);
-  color: var(--ink);
+  background: #edf2f7;
+  color: #17202a;
 }
 
 button,

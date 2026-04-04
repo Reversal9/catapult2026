@@ -16,6 +16,7 @@ requirements.txt
 Lib/
 Scripts/
 
+*.joblib
 
 # Distribution / packaging
 .Python

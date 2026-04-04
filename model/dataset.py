@@ -37,13 +37,16 @@ def calculate_area(lons, lats):
     points = np.column_stack((lons, lats))
     points = np.unique(points, axis=0)
 
-    if len(points) < 3:
+    '''if len(points) < 3:
         return 0
     try:
         hull = ConvexHull(points)
         return hull.volume
     except QhullError:
-        return pdist(points).max()  # length instead of area
+        return pdist(points).max()  # length instead of area'''
+    if len(points) == 1:
+        return 0
+    return (lons.max() - lons.min()) * (lats.max() - lats.min())
 
 def process_wind_data():
 

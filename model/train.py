@@ -71,11 +71,11 @@ def test_loop(model):
     
     return avg_loss, r2_score
 
-def train_loop(epochs=100):
+def train_loop(filename, epochs=100):
     
     model = Habakkuk(ds_size)
     loss_fn = nn.HuberLoss(delta=1.0)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-2)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=7
     )
@@ -91,9 +91,8 @@ def train_loop(epochs=100):
 
         print(f"EPOCH {epoch:3d} | train={train_loss:.4f} | val={val_loss:.4f} | R²={val_r2:.4f} | lr={optimizer.param_groups[0]['lr']:.2e}")
 
-
+    torch.save(model, "model/habakkuk/" + filename + ".dat")
     return model
     
-model = train_loop()
+model = train_loop(filename="solar")
 test_loop(model)
-torch.save(model, "model/habakkuk/model.dat")

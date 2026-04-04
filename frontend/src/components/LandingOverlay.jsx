@@ -14,8 +14,8 @@ function LandingOverlay({ landingState, onEnter }) {
         <p className="kicker">Catapult 2026</p>
         <h2>Renewables Site Scout</h2>
         <p>
-          Plan clean-energy sites with precise map-based region selection and fast
-          feasibility estimates.
+          Plan solar, wind, and digital-infrastructure sites with precise map-based
+          region selection and fast feasibility estimates.
         </p>
         <small>Click anywhere or press any key to begin.</small>
       </div>

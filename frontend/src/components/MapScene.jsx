@@ -3,12 +3,29 @@ import { Circle, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer } fro
 import MapEvents from "./MapEvents";
 import { markerIcon } from "../map/icons";
 
+const CANDIDATE_COLORS = {
+  solar: {
+    stroke: "#cc7a1b",
+    fill: "#f4c86b",
+  },
+  wind: {
+    stroke: "#2d83b7",
+    fill: "#85d3ff",
+  },
+  data_center: {
+    stroke: "#7c5bd6",
+    fill: "#c6b1ff",
+  },
+};
+
 function MapScene({
   region,
   draftPoints,
   p1,
   p2,
   result,
+  selectedCandidateId,
+  selectedCandidate,
   statsVisible,
   popupRef,
   popupPosition,
@@ -17,6 +34,7 @@ function MapScene({
   onToggleStats,
   onSetStatsVisible,
   onApplyCoord,
+  onSelectCandidate,
   onMapReady,
   onLandingInteraction,
   landingHidden,
@@ -74,6 +92,29 @@ function MapScene({
           />
         )}
 
+        {result?.type === "infrastructure" &&
+          result.candidates.map((candidate) => {
+            const colors = CANDIDATE_COLORS[candidate.useType];
+            const isSelected = candidate.id === selectedCandidateId;
+            return (
+              <Polygon
+                key={candidate.id}
+                positions={candidate.polygon}
+                eventHandlers={{
+                  click: () => onSelectCandidate(candidate.id),
+                }}
+                pathOptions={{
+                  color: colors.stroke,
+                  weight: isSelected ? 3 : 1.6,
+                  fillColor: colors.fill,
+                  fillOpacity: isSelected
+                    ? 0.34
+                    : 0.1 + Math.min(candidate.feasibilityScore / 100, 0.22),
+                }}
+              />
+            );
+          })}
+
         {draftPoints.length > 0 && (
           <Polyline
             positions={draftPoints}
@@ -111,27 +152,68 @@ function MapScene({
             closeOnClick={false}
             eventHandlers={{ remove: () => onSetStatsVisible(false) }}
           >
-            <div className="result-popup">
-              <h3>{result.label} Estimate</h3>
-              <p>Area: {result.areaKm2.toFixed(2)} km²</p>
-              <p>Capacity fit: {result.placements.toLocaleString()}</p>
-              <p>Construction cost: ${result.constructionCost.toLocaleString()}</p>
-              <p>Equipment cost: ${result.equipmentCost.toLocaleString()}</p>
-              <p>
-                Estimated production: {result.annualMWh.toLocaleString()} MWh/year
-              </p>
-              {result.type === "solar" && (
-                <>
+            {result.type === "infrastructure" && selectedCandidate ? (
+              <div className="result-popup">
+                <h3>{selectedCandidate.useLabel} Candidate</h3>
+                <p>Feasibility score: {selectedCandidate.feasibilityScore.toFixed(1)}</p>
+                <p>Footprint: {(selectedCandidate.areaKm2 * 100).toFixed(2)} ha</p>
+                <p>
+                  Estimated cost: $
+                  {selectedCandidate.estimatedInstallationCostUsd.toLocaleString()}
+                </p>
+                {selectedCandidate.estimatedAnnualOutputKwh && (
                   <p>
-                    Installed capacity: {result.installedCapacityKw.toLocaleString()} kW
+                    Estimated output:{" "}
+                    {(selectedCandidate.estimatedAnnualOutputKwh / 1000).toLocaleString()}{" "}
+                    MWh/year
                   </p>
-                  <p>Total cost: ${result.totalCost.toLocaleString()}</p>
-                  <p>Suitability score: {result.suitabilityScore}</p>
-                  <p>{result.suitabilityReason}</p>
-                  <p>Weather source: {result.weatherSource}</p>
-                </>
-              )}
-            </div>
+                )}
+                <p>{selectedCandidate.reasoning[0]}</p>
+                <p>{selectedCandidate.reasoning[1]}</p>
+                <p>
+                  Sources: {result.dataSources.imagery}, {result.dataSources.vector_data},{" "}
+                  {result.dataSources.segmentation}, {result.dataSources.terrain}
+                </p>
+              </div>
+            ) : result.type === "infrastructure" ? (
+              <div className="result-popup">
+                <h3>{result.label}</h3>
+                <p>Area: {result.areaKm2.toFixed(2)} km²</p>
+                <p>Evaluated cells: {result.subdivisionsEvaluated.toLocaleString()}</p>
+                <p>No candidate cells cleared the current feasibility thresholds.</p>
+                <p>
+                  Sources: {result.dataSources.imagery}, {result.dataSources.vector_data},{" "}
+                  {result.dataSources.segmentation}, {result.dataSources.terrain}
+                </p>
+              </div>
+            ) : (
+              <div className="result-popup">
+                <h3>{result.label} Summary</h3>
+                <p>Area: {result.areaKm2.toFixed(2)} km²</p>
+                {result.assetCount !== null && result.assetCount !== undefined && (
+                  <p>
+                    Estimated units: {result.assetCount.toLocaleString()}
+                  </p>
+                )}
+                {result.installedCapacityKw && (
+                  <>
+                    <p>Installed capacity: {result.installedCapacityKw.toLocaleString()} kW</p>
+                  </>
+                )}
+                {result.annualMWh && (
+                  <p>
+                    Estimated annual generation: {result.annualMWh.toLocaleString()} MWh
+                  </p>
+                )}
+                <p>Total cost: ${result.totalCost.toLocaleString()}</p>
+                <p>Feasibility score: {result.feasibilityScore.toFixed(1)}</p>
+                <p>{result.scoreExplanation}</p>
+                <p>{result.suitabilityReason}</p>
+                <p>
+                  Weather source: {result.weatherSource === "not-applicable" ? "Not applicable" : result.weatherSource}
+                </p>
+              </div>
+            )}
           </Popup>
         )}
       </MapContainer>

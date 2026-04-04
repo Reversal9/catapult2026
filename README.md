@@ -1,175 +1,170 @@
 # Catapult 2026
 
-Renewables Site Scout is a map-first frontend application for selecting geographic regions and estimating deployment outcomes for solar panels or wind turbines.
+Renewables Site Scout is a map-first decision-support tool for analyzing a user-selected polygon and recommending subregions for solar panels, wind turbines, and data centers.
 
-## Frontend Functionality
+## What The App Does
 
-The frontend (in [frontend](frontend)) provides:
+The system accepts a polygon, validates it, subdivides it into smaller cells, and scores those cells for multiple infrastructure uses.
 
-- A landing experience with smooth fade transition into the app.
-- A full-screen Leaflet map as the persistent visual background.
-- Overlay UI controls that stay above the map and do not block map navigation.
-- Two coordinate inputs in strict DMS format, with validation feedback.
-- Click-to-populate coordinate workflow from the map.
-- Region selection tools:
-  - Rectangle (from two coordinates)
-  - Circle (center + edge click)
-  - Polygon (multi-point click + close)
-- Energy analysis configuration:
-  - Energy type dropdown (solar or wind)
-  - Model source dropdown (predefined or custom)
-  - Model/specification input
-- Analysis result popup near selected region with:
-  - Estimated capacity fit
-  - Construction cost
-  - Equipment cost
-  - Estimated annual production
-- Region refocus button if users navigate away.
-- Light mode default with optional dark mode.
+- Solar scoring considers rooftop/open-land area, shading, slope, and irradiance proxy.
+- Wind scoring considers open land, obstruction, slope, and wind proxy.
+- Data center scoring considers contiguous flat land and road access.
+- The frontend renders returned candidate polygons and lets users inspect the highest-ranked cells by use type and score.
+- The frontend also supports single-asset analysis for solar, wind, and data centers with preset or custom specs, plus a past-year daily generation trend where weather data applies.
 
-## Frontend Architecture
+## Current Pipeline
 
-### Layering model
+The backend pipeline is modular and now lives in `backend/infrastructure/`.
 
-The UI is intentionally split into two layers:
+1. Polygon normalization and self-intersection checks.
+2. Cell subdivision inside the polygon.
+3. Imagery retrieval.
+4. OSM building and road ingestion.
+5. Terrain sampling for slope.
+6. Segmentation or land-cover extraction.
+7. Infrastructure scoring and ranked candidate output.
 
-1. Map layer (`z-index: 1`)
+The main orchestrator is `backend/infrastructure/pipeline.py`.
 
-- Holds the Leaflet map and all map geometry.
-- Always visible and interactive.
+## Data Sources
 
-2. UI layer (`z-index: 20`)
+- Free default imagery: USGS `USGSImageryOnly`, which is primarily NAIP for CONUS requests.
+- Optional imagery: Mapbox Static Images and Sentinel Hub Process API.
+- Vectors: OpenStreetMap via Overpass.
+- Terrain: OpenTopoData public API.
 
-- Contains controls and panels.
-- Uses `pointer-events` strategy so only controls intercept input and the map remains usable.
+Undocumented Google tile scraping is intentionally not used. The backend accepts `"google"` only as a compatibility input and converts it to a supported/fallback path with notes, because the direct tile URL approach is not a supported Google Maps Platform integration.
 
-### Key files
+## ML Segmentation Support
 
-- App shell and behavior: [frontend/src/App.jsx](frontend/src/App.jsx)
-- Layering and component styles: [frontend/src/App.css](frontend/src/App.css)
-- Global base styles: [frontend/src/index.css](frontend/src/index.css)
-- Vite + test configuration: [frontend/vite.config.js](frontend/vite.config.js)
-- ESLint configuration: [frontend/eslint.config.js](frontend/eslint.config.js)
+The backend supports these segmentation modes:
 
-### Data flow summary
+- `rule_based`
+- `hybrid`
+- `auto`
+- `unet`
+- `mask_rcnn`
 
-1. User defines points and/or map-drawn region.
-2. Input validation ensures DMS and required fields are complete.
-3. Compute action runs estimation logic.
-4. Region remains highlighted and popup displays metrics near region center.
+`rule_based` and `hybrid` work out of the box. `unet` and `mask_rcnn` are wired as remote-service integrations because this repo does not ship model weights or a local inference runtime.
 
-## Local Setup
+Remote inference env vars:
 
-### Prerequisites
+- `INFRA_UNET_ENDPOINT`
+- `INFRA_MASK_RCNN_ENDPOINT`
 
-- Node.js 22+
-- npm 10+
+Expected response shape:
 
-### Install
+```json
+{
+  "source": "unet-service",
+  "cells": [
+    {
+      "id": "cell-1",
+      "vegetation_ratio": 0.12,
+      "water_ratio": 0.01,
+      "impervious_ratio": 0.42,
+      "shadow_ratio": 0.08,
+      "building_ratio": 0.25
+    }
+  ]
+}
+```
+
+## Repository Layout
+
+- `backend`: FastAPI service and scoring pipeline.
+- `frontend`: React + Leaflet UI.
+- `model`: Existing training/data-prep experiments.
+- `data`: Local datasets used by model and analysis work.
+
+## Important Backend Files
+
+- `backend/main.py`: API routes.
+- `backend/schemas.py`: request/response models.
+- `backend/asset_analysis.py`: single-asset analysis and weather-driven trend output.
+- `backend/infrastructure_pipeline.py`: compatibility wrapper.
+- `backend/infrastructure/providers/imagery.py`: imagery retrieval.
+- `backend/infrastructure/providers/vector_data.py`: OSM ingestion.
+- `backend/infrastructure/providers/terrain.py`: slope sampling.
+- `backend/infrastructure/segmentation.py`: rule-based and remote ML segmentation integration.
+- `backend/infrastructure/scoring.py`: feature fusion and candidate scoring.
+
+## Important Frontend Files
+
+- `frontend/src/App.jsx`: top-level app state and workflow.
+- `frontend/src/components/ControlPanel.jsx`: collapsible planning panel, asset specs, and result summaries.
+- `frontend/src/components/MapScene.jsx`: map rendering and candidate polygons.
+- `frontend/src/components/TopBar.jsx`: compact settings popover.
+- `frontend/src/components/TrendChart.jsx`: past-year daily generation chart.
+- `frontend/src/lib/assetAnalysisApi.js`: single-asset API client.
+- `frontend/src/lib/assetResult.js`: asset-analysis result mapping.
+- `frontend/src/lib/infrastructureAnalysisApi.js`: infrastructure API client.
+- `frontend/src/lib/infrastructureResult.js`: backend-to-UI mapping helpers.
+
+## Local Development
+
+Backend:
+
+```bash
+cd backend
+python -m unittest discover -s tests -p 'test_*.py'
+uvicorn main:app --reload
+```
+
+Frontend:
 
 ```bash
 cd frontend
 npm ci
-```
-
-### Run dev server
-
-```bash
+npm run test
+npm run lint
+npm run build
 npm run dev
 ```
 
-## Linting, Formatting, and Style Consistency
+## Environment Variables
 
-The frontend enforces style and quality using ESLint + Prettier.
+Frontend env vars:
 
-### Commands
+- `VITE_BACKEND_URL`
+  - Optional.
+  - Defaults to `http://127.0.0.1:8000`.
+  - Set this when the frontend talks to a non-local backend.
+- `VITE_BASE_PATH`
+  - Optional.
+  - Only needed when serving the built frontend from a subpath such as GitHub Pages.
 
-```bash
-cd frontend
-npm run lint
-npm run lint:fix
-npm run format:check
-npm run format
-```
+Backend env vars:
 
-### Notes
+- No env vars are strictly required for local startup.
+- To run the backend with the fullest live-data path, set the provider/model env vars below.
 
-- `npm run lint` validates code quality rules.
-- `npm run format:check` verifies formatting without changing files.
-- `npm run format` applies formatting changes.
+- `MAPBOX_ACCESS_TOKEN`
+  - Optional. Needed only for `imagery_provider="mapbox"`.
+- `MAPBOX_STYLE_OWNER`
+  - Optional. Defaults to `mapbox`.
+- `MAPBOX_STYLE_ID`
+  - Optional. Defaults to `satellite-streets-v12`.
+- `SENTINEL_HUB_CLIENT_ID`
+  - Optional. Needed only for `imagery_provider="sentinel"`.
+- `SENTINEL_HUB_CLIENT_SECRET`
+  - Optional. Needed only for `imagery_provider="sentinel"`.
+- `SENTINEL_HUB_COLLECTION`
+  - Optional. Defaults to `sentinel-2-l2a`.
+- `SENTINEL_LOOKBACK_DAYS`
+  - Optional. Controls Sentinel date selection.
+- `SENTINEL_MAX_CLOUD_COVER`
+  - Optional. Controls Sentinel filtering.
+- `INFRA_UNET_ENDPOINT`
+  - Optional. Remote U-Net inference endpoint for `segmentation_backend="unet"` or `auto`/`hybrid`.
+- `INFRA_MASK_RCNN_ENDPOINT`
+  - Optional. Remote Mask R-CNN inference endpoint for `segmentation_backend="mask_rcnn"` or `auto`/`hybrid`.
+- `OSM_OVERPASS_URL`
+  - Optional. Defaults to the public Overpass interpreter.
+- `INFRASTRUCTURE_IMAGERY_SIZE`
+  - Optional. Controls imagery sample resolution for the infrastructure pipeline.
 
-## Frontend Testing
+Notes:
 
-Vitest + Testing Library are configured for UI/UX behavior validation.
-
-### Run tests
-
-```bash
-cd frontend
-npm run test
-```
-
-### Current test coverage focus
-
-- Landing overlay interaction and transition entry.
-- DMS input validation feedback.
-- Required input gating before enabling compute action.
-- Advanced settings dropdown behavior.
-
-Test file:
-
-- [frontend/src/App.test.jsx](frontend/src/App.test.jsx)
-
-## Build
-
-```bash
-cd frontend
-npm run build
-```
-
-Build output is generated in `frontend/dist`.
-
-## Git Workflow and Deployment Strategy
-
-This repo is configured so deployment uses production build artifacts only.
-
-### Principle
-
-- Source code is versioned on `main`.
-- Deployment publishes only `frontend/dist` output to GitHub Pages.
-- `frontend/dist` is ignored locally in git.
-
-### CI (pull requests + main)
-
-Workflow: [/.github/workflows/ci.yml](.github/workflows/ci.yml)
-
-Runs:
-
-1. Install dependencies
-2. Lint
-3. Format check
-4. Tests
-5. Production build
-
-### GitHub Pages deployment (main only)
-
-Workflow: [/.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml)
-
-Runs on push to `main`:
-
-1. Lint + test + build in `frontend`
-2. Build with `VITE_BASE_PATH=/<repo-name>/`
-3. Upload `frontend/dist` as Pages artifact
-4. Deploy artifact to GitHub Pages
-
-This ensures the deployed site is generated from production output and not from working source files.
-
-## GitHub Pages Setup
-
-In repository settings:
-
-1. Go to `Settings -> Pages`.
-2. Set Source to `GitHub Actions`.
-3. Merge changes to `main` to trigger deployment.
-
-After deployment, the Pages URL is shown in the deploy workflow run output.
+- Past-year solar and wind trend data comes from Open-Meteo historical APIs and does not require an API key.
+- The free default imagery path is `usgs`, so you can run the infrastructure endpoint without paid imagery credentials.

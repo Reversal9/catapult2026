@@ -62,7 +62,7 @@ describe("Frontend UI/UX expectations", () => {
 
     await user.click(screen.getByRole("dialog", { name: /welcome/i }));
 
-    const point1 = screen.getByLabelText(/point 1/i);
+    const point1 = screen.getByLabelText(/point 1/i, { selector: "input" });
     await user.clear(point1);
     await user.type(point1, "invalid coordinate");
 
@@ -75,12 +75,15 @@ describe("Frontend UI/UX expectations", () => {
 
     await user.click(screen.getByRole("dialog", { name: /welcome/i }));
 
-    const searchButton = screen.getByRole("button", { name: /^search$/i });
+    const searchButton = screen.getByRole("button", { name: /run analysis/i });
     expect(searchButton).toBeDisabled();
 
-    await user.selectOptions(screen.getByLabelText(/energy type/i), "solar");
     await user.selectOptions(
-      screen.getByLabelText(/^model$/i),
+      screen.getByLabelText(/asset type/i, { selector: "select" }),
+      "solar",
+    );
+    await user.selectOptions(
+      screen.getByLabelText(/preset/i, { selector: "select" }),
       "SunForge SF-450",
     );
 
@@ -97,7 +100,45 @@ describe("Frontend UI/UX expectations", () => {
     await user.click(trigger);
 
     expect(
-      screen.getByText(/in circle mode click center then edge/i),
+      screen.getByText(/switch between rectangle, circle, and polygon region selection/i),
     ).toBeInTheDocument();
+  });
+
+  it("allows infrastructure analysis without selecting an equipment model", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("dialog", { name: /welcome/i }));
+    await user.selectOptions(
+      screen.getByLabelText(/asset type/i, { selector: "select" }),
+      "infrastructure",
+    );
+
+    expect(screen.getByRole("button", { name: /run analysis/i })).toBeEnabled();
+  });
+
+  it("collapses the top menu into a compact button and can reopen it", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("dialog", { name: /welcome/i }));
+    await user.click(screen.getByRole("button", { name: /close top menu/i }));
+
+    expect(screen.getByRole("button", { name: /open top menu/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /open top menu/i }));
+    expect(screen.getByRole("button", { name: /switch to dark mode/i })).toBeInTheDocument();
+  });
+
+  it("can collapse the planning panel for a larger map view", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("dialog", { name: /welcome/i }));
+    const toggle = screen.getByRole("button", { name: /collapse panel/i });
+    await user.click(toggle);
+
+    expect(screen.getByRole("button", { name: /expand panel/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/point 1/i)).not.toBeInTheDocument();
   });
 });

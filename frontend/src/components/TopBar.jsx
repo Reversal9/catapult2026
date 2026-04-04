@@ -1,23 +1,61 @@
 import React from "react";
 
-function TopBar({ theme, onToggleTheme, userMovedMap, onRefocus }) {
+function TopBar({
+  theme,
+  expanded,
+  onToggleExpanded,
+  onToggleTheme,
+  userMovedMap,
+  onRefocus,
+}) {
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        className="floating-menu-button"
+        aria-label="Open top menu"
+        onClick={onToggleExpanded}
+      >
+        ≡
+      </button>
+    );
+  }
+
   return (
-    <header className="top-strip">
-      <div>
+    <div className="top-strip">
+      <div className="title-chip">
         <h1>Renewables Site Scout</h1>
-        <p>Select a region and estimate practical solar or wind deployment outcomes.</p>
+        <p>Choose a region, pick an asset, and compare build-ready results with clear explanations.</p>
       </div>
-      <div className="top-actions">
-        <button type="button" onClick={onToggleTheme}>
-          {theme === "light" ? "Dark mode" : "Light mode"}
+
+      <div className="top-icon-actions">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+          onClick={onToggleTheme}
+        >
+          {theme === "light" ? "◐" : "☀"}
         </button>
-        {userMovedMap && (
-          <button type="button" onClick={onRefocus}>
-            Refocus region
-          </button>
-        )}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Refocus selected region"
+          onClick={onRefocus}
+          disabled={!userMovedMap}
+        >
+          ⌖
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Close top menu"
+          onClick={onToggleExpanded}
+        >
+          ×
+        </button>
       </div>
-    </header>
+    </div>
   );
 }
 

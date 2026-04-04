@@ -18,7 +18,6 @@ class Habakkuk(nn.Module):
         self.fc1 = nn.Linear(input_size, 480)
         self.fc2 = nn.Linear(480, 100)
         self.fc3 = nn.Linear(100, 24)
-        self.dropout = nn.Dropout(p=0.2)
         self.fc4 = nn.Linear(24, 6)
         self.fc5 = nn.Linear(6, 1)
 
@@ -26,7 +25,6 @@ class Habakkuk(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
-        #x = self.dropout(x)
         x = F.relu(self.fc4(x))
         x = self.fc5(x)
         return x

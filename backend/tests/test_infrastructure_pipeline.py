@@ -16,10 +16,50 @@ from infrastructure_pipeline import (
     RoadFeature,
     analyze_infrastructure_polygon,
 )
+from infrastructure.scoring import solar_candidate
 from schemas import Coordinate, InfrastructureAnalysisRequest
 
 
 class InfrastructurePipelineTests(unittest.TestCase):
+    def test_solar_candidate_uses_shared_packed_project_estimate(self) -> None:
+        cell = {
+            "id": "cell-1",
+            "center_lat": 33.0,
+            "center_lon": -112.0,
+            "polygon": [
+                Coordinate(lat=33.0, lon=-112.0),
+                Coordinate(lat=33.0, lon=-111.99),
+                Coordinate(lat=33.01, lon=-111.99),
+                Coordinate(lat=33.01, lon=-112.0),
+            ],
+            "area_m2": 100_000.0,
+            "rooftop_area_m2": 8_000.0,
+            "open_land_area_m2": 30_000.0,
+            "water_ratio": 0.0,
+            "shading_factor": 0.08,
+            "slope_deg": 2.5,
+            "built_ratio": 0.12,
+            "vegetation_ratio": 0.1,
+        }
+
+        class StubPredictor:
+            model_name = "habakkuk"
+
+            def predict(self, **kwargs):
+                return 456_789.0, {
+                    "climate_annual_cloud_cover_pct": 18.0,
+                    "climate_annual_temperature_c": 24.0,
+                }
+
+        with patch("solar_project.get_predictor", return_value=StubPredictor()):
+            candidate = solar_candidate(cell, 1)
+
+        self.assertIsNotNone(candidate)
+        assert candidate is not None
+        self.assertEqual(candidate.metadata["model_source"], "habakkuk")
+        self.assertGreater(candidate.metadata["panel_count"], 0)
+        self.assertEqual(candidate.estimated_annual_output_kwh, 456_789.0)
+
     def test_request_defaults_prefer_free_imagery_and_live_terrain(self) -> None:
         request = InfrastructureAnalysisRequest(
             points=[

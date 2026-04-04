@@ -1,6 +1,18 @@
 from __future__ import annotations
 
-from schemas import CandidateRegion, Coordinate
+from schemas import (
+    CandidateRegion,
+    Coordinate,
+    DEFAULT_CONSTRUCTION_COST_PER_M2_USD,
+    DEFAULT_PACKING_EFFICIENCY,
+    DEFAULT_PANEL_AZIMUTH_DEG,
+    DEFAULT_PANEL_COST_USD,
+    DEFAULT_PANEL_RATING_W,
+    DEFAULT_PANEL_TILT_DEG,
+    DEFAULT_SOLAR_PANEL_AREA_M2,
+    DEFAULT_SUNLIGHT_THRESHOLD_KWH_M2_YR,
+)
+from solar_project import SolarProjectInputs, analyze_solar_project
 
 from .common import clamp, pseudo, solar_irradiance_proxy, wind_speed_proxy
 from .grid import nearest_road_distance_m, overlap_building_area_m2
@@ -107,28 +119,37 @@ def solar_candidate(cell: dict, idx: int) -> CandidateRegion | None:
     if usable_solar_area < 2_500:
         return None
 
-    panel_area = 2.0
-    panel_rating_w = 420.0
-    panel_count = int(usable_solar_area * 0.72 // panel_area)
-    if panel_count < 24:
-        return None
+    estimate = analyze_solar_project(
+        SolarProjectInputs(
+            area_m2=usable_solar_area,
+            centroid_lat=cell["center_lat"],
+            centroid_lon=cell["center_lon"],
+            panel_area_m2=DEFAULT_SOLAR_PANEL_AREA_M2,
+            panel_rating_w=DEFAULT_PANEL_RATING_W,
+            panel_cost_usd=DEFAULT_PANEL_COST_USD,
+            construction_cost_per_m2_usd=DEFAULT_CONSTRUCTION_COST_PER_M2_USD,
+            packing_efficiency=DEFAULT_PACKING_EFFICIENCY,
+            performance_ratio=0.8,
+            sunlight_threshold_kwh_m2_yr=DEFAULT_SUNLIGHT_THRESHOLD_KWH_M2_YR,
+            panel_tilt_deg=DEFAULT_PANEL_TILT_DEG,
+            panel_azimuth_deg=DEFAULT_PANEL_AZIMUTH_DEG,
+            state=None,
+        ),
+        sunlight_intensity_kwh_m2_yr=irradiance,
+        weather_source="irradiance-proxy",
+        low_sunlight_reason="Cell-level solar resource falls below the recommended threshold.",
+        low_capacity_reason="The usable subregion is too small to host a meaningful packed solar layout.",
+        success_reason="The subregion has enough usable area and solar resource for a practical packed layout.",
+    )
 
-    installed_kw = panel_count * panel_rating_w / 1000.0
-    annual_kwh = irradiance * usable_solar_area * (panel_rating_w / (1000 * panel_area)) * 0.8
-    cost = panel_count * 260.0 + usable_solar_area * 120.0
+    if estimate.layout.panel_count < 24:
+        return None
 
     flatness_score = clamp((8.0 - cell["slope_deg"]) / 8.0, 0.0, 1.0)
     shade_score = clamp(1.0 - cell["shading_factor"], 0.0, 1.0)
-    area_score = clamp(usable_solar_area / 12_000.0, 0.0, 1.0)
-    irradiance_score = clamp((irradiance - 1_150.0) / 900.0, 0.0, 1.0)
+    buildability_score = round(100 * (0.45 * shade_score + 0.25 * flatness_score), 1)
     score = round(
-        100
-        * (
-            0.35 * area_score
-            + 0.3 * irradiance_score
-            + 0.2 * shade_score
-            + 0.15 * flatness_score
-        ),
+        0.7 * estimate.suitability_score + 0.3 * buildability_score,
         1,
     )
     if score < 55:
@@ -141,16 +162,20 @@ def solar_candidate(cell: dict, idx: int) -> CandidateRegion | None:
         area_m2=round(usable_solar_area, 2),
         feasibility_score=score,
         reasoning=[
-            "Building footprints and segmented open land indicate usable solar area in this cell.",
-            "Imagery-derived vegetation, water, and shading constraints remain manageable.",
-            "Slope and irradiance remain in a practical build range for solar deployment.",
+            "Building footprints and segmented open land define a usable solar build envelope in this cell.",
+            estimate.suitability_reason,
+            "Slope, vegetation, and shading remain in a practical range for a packed solar layout.",
         ],
-        estimated_annual_output_kwh=round(annual_kwh, 2),
-        estimated_installation_cost_usd=round(cost, 2),
+        estimated_annual_output_kwh=round(estimate.estimated_annual_output_kwh, 2),
+        estimated_installation_cost_usd=round(estimate.cost.total_project_cost_usd, 2),
         metadata={
-            "panel_count": panel_count,
-            "installed_capacity_kw": round(installed_kw, 2),
+            "model_source": estimate.model_source,
+            "weather_source": estimate.weather_source,
+            "panel_count": estimate.layout.panel_count,
+            "installed_capacity_kw": round(estimate.layout.installed_capacity_kw, 2),
             "irradiance_kwh_m2_yr": round(irradiance, 2),
+            "usable_solar_area_m2": round(usable_solar_area, 2),
+            "packed_usable_area_m2": round(estimate.layout.usable_area_m2, 2),
             "building_coverage_ratio": round(cell["built_ratio"], 3),
             "vegetation_ratio": round(cell["vegetation_ratio"], 3),
             "water_ratio": round(cell["water_ratio"], 3),

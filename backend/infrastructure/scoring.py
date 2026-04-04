@@ -404,7 +404,7 @@ def evaluate_solar_candidate(
     min_usable_area_m2 = max(600.0, min(2_500.0, cell["area_m2"] * 0.1))
     validity_source = "mask"
     if usable_solar_area < min_usable_area_m2:
-        if cell.get("water_ratio", 0.0) >= 0.65:
+        if cell.get("water_ratio", 0.0) >= 0.5 and not buildings and not roads:
             return None, "low_usable_area"
         fallback_open_area = clamp(
             cell["open_land_area_m2"] * cell.get("unobstructed_ratio", 1.0),

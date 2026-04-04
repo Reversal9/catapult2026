@@ -28,7 +28,7 @@ def process_solar_data():
     cols_not_in_list = [col for col in raw_solar_df.columns if col not in ORIG_SOLAR_COLS]
     raw_solar_era5_df = raw_solar_era5_df.drop(columns=cols_not_in_list)
 
-    #eia_ids = raw_solar_era5_df["eia_id"].dropna().unique().tolist()
+    # eia_ids = raw_solar_era5_df["eia_id"].dropna().unique().tolist()
     # avg_generation_df = utils.get_all_generation(eia_ids)
     avg_generation_df = pd.read_csv("data/avg_eia_solar_gen.csv") # Maybe in future change to live solar
 

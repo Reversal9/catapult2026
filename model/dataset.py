@@ -26,26 +26,20 @@ def process_solar_data():
 
 
     DATA_FEATURES = ["p_area", "p_tilt", "p_azimuth"]
-    MODEL_FEATURE_COLS = DATA_FEATURES + utils.SOLAR_VARS
     ORIG_SOLAR_COLS =  DATA_FEATURES + ["ylat", "xlong", "p_img_date", "eia_id"]
 
-    raw_solar_df = pd.read_csv("data/solar.csv")[ORIG_SOLAR_COLS]
+    raw_solar_df = pd.read_csv("data/solar_with_climate.csv")
+    raw_solar_era5_df = pd.read_csv("data/solar_with_era5_climate.csv")
 
-    eia_ids = raw_solar_df["eia_id"].dropna().unique().tolist()
+    cols_not_in_list = [col for col in raw_solar_df.columns if col not in DATA_FEATURES]
+    raw_solar_era5_df = raw_solar_era5_df.drop(columns=cols_not_in_list)
+
+    eia_ids = raw_solar_era5_df["eia_id"].dropna().unique().tolist()
     avg_generation_df = utils.get_all_generation(eia_ids)
 
-    raw_solar_df = raw_solar_df.merge(avg_generation_df, left_on="eia_id", right_on="plantCode", how="left")
+    raw_solar_era5_df = raw_solar_era5_df.merge(avg_generation_df, left_on="eia_id", right_on="plantCode", how="left")
 
-    print(final_df)
-
-
-    # weather_solar_df = pd.DataFrame(columns=utils.get_solar_weather_features())
     
-    # raw_solar_df["p_img_date"] = pd.to_datetime(raw_solar_df["p_img_date"].astype(str), format="%Y%m%d", errors="coerce")
-    # for i in range(0, raw_solar_df.shape[0]):
-    #     weather_solar_df.loc[weather_solar_df.shape[0]] = utils.get_solar_climate_data(raw_solar_df.loc[i, "ylat"], raw_solar_df.loc[i, "xlong"])#, raw_solar_df.loc[i, "p_img_date"])
-    #     print("getting weather! ", i)
-    #     weather_solar_df.to_csv("data/weather_dataset_solar.csv", index=False)
 
 def get_data():
     df = pd.read_csv("data/dataset_sc.csv")

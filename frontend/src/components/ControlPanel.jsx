@@ -10,20 +10,20 @@ function HelpButton({ label, help }) {
   return (
     <span className={`help-wrap ${open ? "open" : ""}`}>
       <span className="label-with-help">
-      <span>{label}</span>
-      <button
-        type="button"
-        className="help-button"
-        aria-label={`Help for ${label}`}
-        aria-expanded={open}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setOpen((value) => !value);
-        }}
-      >
-        ?
-      </button>
+        <span>{label}</span>
+        <button
+          type="button"
+          className="help-button"
+          aria-label={`Help for ${label}`}
+          aria-expanded={open}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen((value) => !value);
+          }}
+        >
+          ?
+        </button>
       </span>
       {open && (
         <span className="help-popover" role="note">
@@ -79,7 +79,10 @@ function ControlPanel({
     result?.type === "infrastructure" ? result.candidates.slice(0, 6) : [];
 
   return (
-    <section className={`bottom-panel ${collapsed ? "collapsed" : ""}`} aria-label="Inputs">
+    <section
+      className={`bottom-panel ${collapsed ? "collapsed" : ""}`}
+      aria-label="Inputs"
+    >
       <div className="panel-header">
         <div>
           <h2>Planning Panel</h2>
@@ -159,7 +162,11 @@ function ControlPanel({
                 <button type="button" onClick={onFinalizePolygon}>
                   Close polygon
                 </button>
-                <button type="button" onClick={onRemoveLastPoint} disabled={!hasDraftPoints}>
+                <button
+                  type="button"
+                  onClick={onRemoveLastPoint}
+                  disabled={!hasDraftPoints}
+                >
                   Undo point
                 </button>
                 <button type="button" onClick={onUseRectangle}>
@@ -167,8 +174,9 @@ function ControlPanel({
                 </button>
               </div>
               <p className="helper">
-                Use this section to switch between rectangle, circle, and polygon region
-                selection. Click a coordinate field and then the map to fill it.
+                Use this section to switch between rectangle, circle, and
+                polygon region selection. Click a coordinate field and then the
+                map to fill it.
               </p>
             </div>
           </div>
@@ -179,12 +187,17 @@ function ControlPanel({
                 label="Asset type"
                 help="Pick one asset if you want one direct estimate. Pick the comparison option if you want the backend to rank the best subregions for solar, wind, and data centers."
               />
-              <select value={energyType} onChange={(event) => onEnergyTypeChange(event.target.value)}>
+              <select
+                value={energyType}
+                onChange={(event) => onEnergyTypeChange(event.target.value)}
+              >
                 <option value="">Select asset</option>
                 <option value="solar">Solar panels</option>
                 <option value="wind">Wind turbines</option>
                 <option value="data_center">Data center</option>
-                <option value="infrastructure">Compare all three across the site</option>
+                <option value="infrastructure">
+                  Compare all three across the site
+                </option>
               </select>
             </label>
 
@@ -194,32 +207,39 @@ function ControlPanel({
                   label="Specification source"
                   help="Use a preset for a fast starting point, or custom if you already know the equipment values you want to test."
                 />
-                <select value={modelMode} onChange={(event) => onModelModeChange(event.target.value)}>
+                <select
+                  value={modelMode}
+                  onChange={(event) => onModelModeChange(event.target.value)}
+                >
                   <option value="predefined">Use a preset</option>
                   <option value="custom">Enter custom specs</option>
                 </select>
               </label>
             )}
 
-            {energyType && energyType !== "infrastructure" && modelMode === "predefined" && (
-              <label>
-                <HelpButton
-                  label="Preset"
-                  help="A preset fills in example equipment values so you can compare ideas without typing every input yourself."
-                />
-                <select
-                  value={selectedModel}
-                  onChange={(event) => onSelectedModelChange(event.target.value)}
-                >
-                  <option value="">Select preset</option>
-                  {assetPresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            {energyType &&
+              energyType !== "infrastructure" &&
+              modelMode === "predefined" && (
+                <label>
+                  <HelpButton
+                    label="Preset"
+                    help="A preset fills in example equipment values so you can compare ideas without typing every input yourself."
+                  />
+                  <select
+                    value={selectedModel}
+                    onChange={(event) =>
+                      onSelectedModelChange(event.target.value)
+                    }
+                  >
+                    <option value="">Select preset</option>
+                    {assetPresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
             {energyType === "infrastructure" && (
               <label>
@@ -229,7 +249,9 @@ function ControlPanel({
                 />
                 <select
                   value={imageryProvider}
-                  onChange={(event) => onImageryProviderChange(event.target.value)}
+                  onChange={(event) =>
+                    onImageryProviderChange(event.target.value)
+                  }
                 >
                   {INFRASTRUCTURE_IMAGERY_PROVIDERS.map((provider) => (
                     <option key={provider.value} value={provider.value}>
@@ -248,7 +270,9 @@ function ControlPanel({
                 />
                 <select
                   value={segmentationBackend}
-                  onChange={(event) => onSegmentationBackendChange(event.target.value)}
+                  onChange={(event) =>
+                    onSegmentationBackendChange(event.target.value)
+                  }
                 >
                   {INFRASTRUCTURE_SEGMENTATION_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -260,22 +284,26 @@ function ControlPanel({
             )}
           </div>
 
-          {energyType && energyType !== "infrastructure" && modelMode === "custom" && (
-            <div className="spec-grid">
-              {assetSpecFields.map((field) => (
-                <label key={field.key}>
-                  <HelpButton label={field.label} help={field.help} />
-                  <input
-                    type="number"
-                    min={field.min}
-                    step={field.step ?? "any"}
-                    value={field.value}
-                    onChange={(event) => onAssetSpecChange(field.key, event.target.value)}
-                  />
-                </label>
-              ))}
-            </div>
-          )}
+          {energyType &&
+            energyType !== "infrastructure" &&
+            modelMode === "custom" && (
+              <div className="spec-grid">
+                {assetSpecFields.map((field) => (
+                  <label key={field.key}>
+                    <HelpButton label={field.label} help={field.help} />
+                    <input
+                      type="number"
+                      min={field.min}
+                      step={field.step ?? "any"}
+                      value={field.value}
+                      onChange={(event) =>
+                        onAssetSpecChange(field.key, event.target.value)
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
 
           {energyType === "infrastructure" && (
             <div className="spec-grid single-row">
@@ -290,9 +318,13 @@ function ControlPanel({
                   max="2000"
                   step="50"
                   value={cellSizeMeters}
-                  onChange={(event) => onCellSizeMetersChange(event.target.value)}
+                  onChange={(event) =>
+                    onCellSizeMetersChange(event.target.value)
+                  }
                 />
-                <small>Smaller cells give more detail but take longer to score.</small>
+                <small>
+                  Smaller cells give more detail but take longer to score.
+                </small>
               </label>
             </div>
           )}
@@ -311,19 +343,25 @@ function ControlPanel({
           </div>
 
           {result?.type === "infrastructure" && (
-            <section className="candidate-results" aria-label="Infrastructure candidates">
+            <section
+              className="candidate-results"
+              aria-label="Infrastructure candidates"
+            >
               <div className="candidate-summary">
                 <div>
-                  <strong>{result.candidateCount}</strong> ranked candidates across{" "}
-                  <strong>{result.subdivisionsEvaluated}</strong> evaluated cells
+                  <strong>{result.candidateCount}</strong> ranked candidates
+                  across <strong>{result.subdivisionsEvaluated}</strong>{" "}
+                  evaluated cells
                 </div>
                 <div>
-                  A higher feasibility score means the site clears more of the basic
-                  screeners for the chosen use type.
+                  A higher feasibility score means the site clears more of the
+                  basic screeners for the chosen use type.
                 </div>
                 <div>
-                  Sources: {result.dataSources.imagery}, {result.dataSources.vector_data},{" "}
-                  {result.dataSources.segmentation}, {result.dataSources.terrain}
+                  Sources: {result.dataSources.imagery},{" "}
+                  {result.dataSources.vector_data},{" "}
+                  {result.dataSources.segmentation},{" "}
+                  {result.dataSources.terrain}
                 </div>
               </div>
 
@@ -332,7 +370,11 @@ function ControlPanel({
                   <button
                     key={candidate.id}
                     type="button"
-                    className={selectedCandidateId === candidate.id ? "candidate-pill active" : "candidate-pill"}
+                    className={
+                      selectedCandidateId === candidate.id
+                        ? "candidate-pill active"
+                        : "candidate-pill"
+                    }
                     onClick={() => onSelectCandidate(candidate.id)}
                   >
                     <span>{candidate.useLabel}</span>
@@ -344,13 +386,18 @@ function ControlPanel({
           )}
 
           {result && result.type !== "infrastructure" && (
-            <section className="asset-result-card" aria-label="Asset analysis result">
+            <section
+              className="asset-result-card"
+              aria-label="Asset analysis result"
+            >
               <div className="asset-result-header">
                 <div>
                   <h3>{result.label} Summary</h3>
                   <p>{result.scoreExplanation}</p>
                 </div>
-                <div className={`score-badge ${result.suitable ? "good" : "caution"}`}>
+                <div
+                  className={`score-badge ${result.suitable ? "good" : "caution"}`}
+                >
                   <span>Score {result.feasibilityScore.toFixed(1)}</span>
                   <HelpButton
                     label="Feasibility score"
@@ -361,22 +408,37 @@ function ControlPanel({
 
               <div className="asset-metrics">
                 <p>Selected area: {result.areaKm2.toFixed(2)} km²</p>
-                {result.assetCount !== null && result.assetCount !== undefined && (
+                {result.assetCount !== null &&
+                  result.assetCount !== undefined && (
+                    <p>
+                      Estimated{" "}
+                      {result.type === "solar"
+                        ? "units"
+                        : result.type === "wind"
+                          ? "turbines"
+                          : "campuses"}
+                      : {result.assetCount.toLocaleString()}
+                    </p>
+                  )}
+                {result.installedCapacityKw && (
                   <p>
-                    Estimated {result.type === "solar" ? "units" : result.type === "wind" ? "turbines" : "campuses"}:{" "}
-                    {result.assetCount.toLocaleString()}
+                    Installed capacity:{" "}
+                    {result.installedCapacityKw.toLocaleString()} kW
                   </p>
                 )}
-                {result.installedCapacityKw && (
-                  <p>Installed capacity: {result.installedCapacityKw.toLocaleString()} kW</p>
-                )}
                 {result.annualMWh && (
-                  <p>Estimated annual generation: {result.annualMWh.toLocaleString()} MWh</p>
+                  <p>
+                    Estimated annual generation:{" "}
+                    {result.annualMWh.toLocaleString()} MWh
+                  </p>
                 )}
-                <p>Estimated project cost: ${result.totalCost.toLocaleString()}</p>
+                <p>
+                  Estimated project cost: ${result.totalCost.toLocaleString()}
+                </p>
                 <p>{result.suitabilityReason}</p>
                 <p>
-                  Trend period: {result.trendPeriodStart} to {result.trendPeriodEnd}
+                  Trend period: {result.trendPeriodStart} to{" "}
+                  {result.trendPeriodEnd}
                 </p>
                 {result.dailyGeneration?.length > 0 && (
                   <p>

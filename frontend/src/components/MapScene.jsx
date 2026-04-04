@@ -1,5 +1,13 @@
 import React from "react";
-import { Circle, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer } from "react-leaflet";
+import {
+  Circle,
+  MapContainer,
+  Marker,
+  Polygon,
+  Polyline,
+  Popup,
+  TileLayer,
+} from "react-leaflet";
 import MapEvents from "./MapEvents";
 import { markerIcon } from "../map/icons";
 
@@ -155,8 +163,13 @@ function MapScene({
             {result.type === "infrastructure" && selectedCandidate ? (
               <div className="result-popup">
                 <h3>{selectedCandidate.useLabel} Candidate</h3>
-                <p>Feasibility score: {selectedCandidate.feasibilityScore.toFixed(1)}</p>
-                <p>Footprint: {(selectedCandidate.areaKm2 * 100).toFixed(2)} ha</p>
+                <p>
+                  Feasibility score:{" "}
+                  {selectedCandidate.feasibilityScore.toFixed(1)}
+                </p>
+                <p>
+                  Footprint: {(selectedCandidate.areaKm2 * 100).toFixed(2)} ha
+                </p>
                 <p>
                   Estimated cost: $
                   {selectedCandidate.estimatedInstallationCostUsd.toLocaleString()}
@@ -164,45 +177,59 @@ function MapScene({
                 {selectedCandidate.estimatedAnnualOutputKwh && (
                   <p>
                     Estimated output:{" "}
-                    {(selectedCandidate.estimatedAnnualOutputKwh / 1000).toLocaleString()}{" "}
+                    {(
+                      selectedCandidate.estimatedAnnualOutputKwh / 1000
+                    ).toLocaleString()}{" "}
                     MWh/year
                   </p>
                 )}
                 <p>{selectedCandidate.reasoning[0]}</p>
                 <p>{selectedCandidate.reasoning[1]}</p>
                 <p>
-                  Sources: {result.dataSources.imagery}, {result.dataSources.vector_data},{" "}
-                  {result.dataSources.segmentation}, {result.dataSources.terrain}
+                  Sources: {result.dataSources.imagery},{" "}
+                  {result.dataSources.vector_data},{" "}
+                  {result.dataSources.segmentation},{" "}
+                  {result.dataSources.terrain}
                 </p>
               </div>
             ) : result.type === "infrastructure" ? (
               <div className="result-popup">
                 <h3>{result.label}</h3>
                 <p>Area: {result.areaKm2.toFixed(2)} km²</p>
-                <p>Evaluated cells: {result.subdivisionsEvaluated.toLocaleString()}</p>
-                <p>No candidate cells cleared the current feasibility thresholds.</p>
                 <p>
-                  Sources: {result.dataSources.imagery}, {result.dataSources.vector_data},{" "}
-                  {result.dataSources.segmentation}, {result.dataSources.terrain}
+                  Evaluated cells:{" "}
+                  {result.subdivisionsEvaluated.toLocaleString()}
+                </p>
+                <p>
+                  No candidate cells cleared the current feasibility thresholds.
+                </p>
+                <p>
+                  Sources: {result.dataSources.imagery},{" "}
+                  {result.dataSources.vector_data},{" "}
+                  {result.dataSources.segmentation},{" "}
+                  {result.dataSources.terrain}
                 </p>
               </div>
             ) : (
               <div className="result-popup">
                 <h3>{result.label} Summary</h3>
                 <p>Area: {result.areaKm2.toFixed(2)} km²</p>
-                {result.assetCount !== null && result.assetCount !== undefined && (
-                  <p>
-                    Estimated units: {result.assetCount.toLocaleString()}
-                  </p>
-                )}
+                {result.assetCount !== null &&
+                  result.assetCount !== undefined && (
+                    <p>Estimated units: {result.assetCount.toLocaleString()}</p>
+                  )}
                 {result.installedCapacityKw && (
                   <>
-                    <p>Installed capacity: {result.installedCapacityKw.toLocaleString()} kW</p>
+                    <p>
+                      Installed capacity:{" "}
+                      {result.installedCapacityKw.toLocaleString()} kW
+                    </p>
                   </>
                 )}
                 {result.annualMWh && (
                   <p>
-                    Estimated annual generation: {result.annualMWh.toLocaleString()} MWh
+                    Estimated annual generation:{" "}
+                    {result.annualMWh.toLocaleString()} MWh
                   </p>
                 )}
                 <p>Total cost: ${result.totalCost.toLocaleString()}</p>
@@ -210,7 +237,10 @@ function MapScene({
                 <p>{result.scoreExplanation}</p>
                 <p>{result.suitabilityReason}</p>
                 <p>
-                  Weather source: {result.weatherSource === "not-applicable" ? "Not applicable" : result.weatherSource}
+                  Weather source:{" "}
+                  {result.weatherSource === "not-applicable"
+                    ? "Not applicable"
+                    : result.weatherSource}
                 </p>
               </div>
             )}

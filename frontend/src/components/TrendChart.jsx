@@ -64,7 +64,11 @@ function TrendChart({ points, label, unit = "kWh" }) {
   }
 
   const activePoint =
-    hoveredIndex === null ? null : chart.plottedPoints[clamp(hoveredIndex, 0, chart.plottedPoints.length - 1)];
+    hoveredIndex === null
+      ? null
+      : chart.plottedPoints[
+          clamp(hoveredIndex, 0, chart.plottedPoints.length - 1)
+        ];
 
   return (
     <div className="trend-chart-block">
@@ -121,7 +125,8 @@ function TrendChart({ points, label, unit = "kWh" }) {
           onMouseLeave={() => setHoveredIndex(null)}
           onMouseMove={(event) => {
             const bounds = event.currentTarget.getBoundingClientRect();
-            const x = ((event.clientX - bounds.left) / bounds.width) * chart.width;
+            const x =
+              ((event.clientX - bounds.left) / bounds.width) * chart.width;
             const index = clamp(
               Math.round((x - chart.padding) / chart.stepX),
               0,
@@ -138,7 +143,12 @@ function TrendChart({ points, label, unit = "kWh" }) {
             className="trend-axis-line"
           />
           <path d={chart.areaPath} className="trend-area-path" />
-          <path d={chart.path} fill="none" stroke="currentColor" strokeWidth="2.5" />
+          <path
+            d={chart.path}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          />
           {activePoint && (
             <>
               <line

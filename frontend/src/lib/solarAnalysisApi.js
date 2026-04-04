@@ -18,7 +18,9 @@ export const analyzeSolarRegion = async (region, overrides = {}) => {
   });
 
   if (!response.ok) {
-    throw new Error(await readErrorDetail(response, "Solar analysis request failed."));
+    throw new Error(
+      await readErrorDetail(response, "Solar analysis request failed."),
+    );
   }
 
   return response.json();

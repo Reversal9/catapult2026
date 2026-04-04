@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 import { analyzeAssetRegion } from "./lib/assetAnalysisApi";
@@ -166,7 +172,9 @@ function App() {
   const [cellSizeMeters, setCellSizeMeters] = useState(300);
   const [solarSpec, setSolarSpec] = useState(defaultSpec("solar"));
   const [windSpec, setWindSpec] = useState(defaultSpec("wind"));
-  const [dataCenterSpec, setDataCenterSpec] = useState(defaultSpec("data_center"));
+  const [dataCenterSpec, setDataCenterSpec] = useState(
+    defaultSpec("data_center"),
+  );
 
   const [submitError, setSubmitError] = useState("");
   const [searching, setSearching] = useState(false);
@@ -319,7 +327,10 @@ function App() {
   );
 
   const assetPresets = useMemo(
-    () => (energyType && energyType !== "infrastructure" ? ASSET_PRESETS[energyType] ?? [] : []),
+    () =>
+      energyType && energyType !== "infrastructure"
+        ? (ASSET_PRESETS[energyType] ?? [])
+        : [],
     [energyType],
   );
   const modelValue = modelMode === "predefined" ? selectedModel : "custom-spec";
@@ -331,7 +342,10 @@ function App() {
         ? windSpec
         : dataCenterSpec;
   const assetSpecFields = useMemo(
-    () => (energyType && energyType !== "infrastructure" ? specFieldsFor(energyType, activeSpec) : []),
+    () =>
+      energyType && energyType !== "infrastructure"
+        ? specFieldsFor(energyType, activeSpec)
+        : [],
     [activeSpec, energyType],
   );
 
@@ -382,7 +396,8 @@ function App() {
           assetType: energyType,
           presetName:
             modelMode === "predefined"
-              ? assetPresets.find((preset) => preset.id === selectedModel)?.label ?? null
+              ? (assetPresets.find((preset) => preset.id === selectedModel)
+                  ?.label ?? null)
               : "Custom specification",
           solarSpec,
           windSpec,
@@ -393,7 +408,8 @@ function App() {
           mapAssetResult(assetResult, {
             presetName:
               modelMode === "predefined"
-                ? assetPresets.find((preset) => preset.id === selectedModel)?.label ?? null
+                ? (assetPresets.find((preset) => preset.id === selectedModel)
+                    ?.label ?? null)
                 : "Custom specification",
           }),
         );
@@ -415,7 +431,9 @@ function App() {
   const activeInfrastructureCandidate = useMemo(() => {
     if (result?.type !== "infrastructure") return null;
     return (
-      result.candidates.find((candidate) => candidate.id === selectedCandidateId) ??
+      result.candidates.find(
+        (candidate) => candidate.id === selectedCandidateId,
+      ) ??
       result.candidates[0] ??
       null
     );
@@ -474,7 +492,9 @@ function App() {
           theme={theme}
           expanded={settingsOpen}
           onToggleExpanded={() => setSettingsOpen((value) => !value)}
-          onToggleTheme={() => setTheme((value) => (value === "light" ? "dark" : "light"))}
+          onToggleTheme={() =>
+            setTheme((value) => (value === "light" ? "dark" : "light"))
+          }
           userMovedMap={userMovedMap}
           onRefocus={() => {
             fitRegion(0.55);
@@ -526,8 +546,10 @@ function App() {
             setSelectedModel(presetId);
             const preset = assetPresets.find((item) => item.id === presetId);
             if (!preset) return;
-            if (energyType === "solar") setSolarSpec(structuredClone(preset.spec));
-            else if (energyType === "wind") setWindSpec(structuredClone(preset.spec));
+            if (energyType === "solar")
+              setSolarSpec(structuredClone(preset.spec));
+            else if (energyType === "wind")
+              setWindSpec(structuredClone(preset.spec));
             else if (energyType === "data_center") {
               setDataCenterSpec(structuredClone(preset.spec));
             }

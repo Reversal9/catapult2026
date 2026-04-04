@@ -100,7 +100,9 @@ describe("Frontend UI/UX expectations", () => {
     await user.click(trigger);
 
     expect(
-      screen.getByText(/switch between rectangle, circle, and polygon region selection/i),
+      screen.getByText(
+        /switch between rectangle, circle, and polygon region selection/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -124,10 +126,14 @@ describe("Frontend UI/UX expectations", () => {
     await user.click(screen.getByRole("dialog", { name: /welcome/i }));
     await user.click(screen.getByRole("button", { name: /close top menu/i }));
 
-    expect(screen.getByRole("button", { name: /open top menu/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /open top menu/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /open top menu/i }));
-    expect(screen.getByRole("button", { name: /switch to dark mode/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /switch to dark mode/i }),
+    ).toBeInTheDocument();
   });
 
   it("can collapse the planning panel for a larger map view", async () => {
@@ -138,7 +144,9 @@ describe("Frontend UI/UX expectations", () => {
     const toggle = screen.getByRole("button", { name: /collapse panel/i });
     await user.click(toggle);
 
-    expect(screen.getByRole("button", { name: /expand panel/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /expand panel/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText(/point 1/i)).not.toBeInTheDocument();
   });
 });

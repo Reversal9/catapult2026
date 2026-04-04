@@ -22,7 +22,9 @@ export const analyzeAssetRegion = async (region, options) => {
   });
 
   if (!response.ok) {
-    throw new Error(await readErrorDetail(response, "Asset analysis request failed."));
+    throw new Error(
+      await readErrorDetail(response, "Asset analysis request failed."),
+    );
   }
 
   return response.json();

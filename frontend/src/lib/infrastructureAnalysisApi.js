@@ -13,17 +13,23 @@ export const buildInfrastructureRequest = (region, overrides = {}) => ({
 });
 
 export const analyzeInfrastructureRegion = async (region, overrides = {}) => {
-  const response = await fetch(`${DEFAULT_BACKEND_URL}/infrastructure/analyze`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  const response = await fetch(
+    `${DEFAULT_BACKEND_URL}/infrastructure/analyze`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildInfrastructureRequest(region, overrides)),
     },
-    body: JSON.stringify(buildInfrastructureRequest(region, overrides)),
-  });
+  );
 
   if (!response.ok) {
     throw new Error(
-      await readErrorDetail(response, "Infrastructure analysis request failed."),
+      await readErrorDetail(
+        response,
+        "Infrastructure analysis request failed.",
+      ),
     );
   }
 

@@ -17,7 +17,7 @@ class RenewableDataset(Dataset):
 
 def get_data():
 
-    raw_df = pd.read_csv("solar.csv")["ylat", "xlong", "p_img_date"]
+    raw_df = pd.read_csv("data/solar.csv")["ylat", "xlong", "p_img_date"]
     df = pd.DataFrame(columns=utils.get_solar_weather_features())
     for i in range(0, raw_df.shape[0]):
         df[df.shape[0]] = utils.get_solar_weather_data(raw_df.iloc[i, "ylat"], raw_df.iloc[i, "xlong"], raw_df.iloc[i, "p_img_date"])

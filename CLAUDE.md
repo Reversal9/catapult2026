@@ -9,236 +9,330 @@
 
 **What it does:**
 The user clicks a point on a US map and defines a search radius (default 50 miles).
-The model scouts inside that circle to determine:
-- Whether **solar** or **wind** is better for this region
-- The **best candidate location** within the circle (lat/lon)
-- An **energy estimate** for a standard installation at that spot
-- A **suitability score** [0–100]
+The model determines:
+- Whether the location is suitable for renewables at all
+- If so, which type (solar or wind) maximises energy production
+- A suitability score and the best candidate location within the circle
 
 ```
 Input:  center_lat, center_lon, radius_miles (default 50)
 
 Output:
-  recommendation:      "solar" | "wind" | "hybrid"
+  recommendation:      "solar" | "wind" | "hybrid" | "not suitable"
   best_location:       {lat, lon}          ← pinned on map
-  solar_kwh_yr:        float               ← for standard solar farm
-  wind_kwh_yr:         float               ← for standard wind farm
-  suitability_score:   float [0–100]
+  solar_kwh_yr:        float               ← physics estimate if solar/hybrid
+  wind_kwh_yr:         float               ← physics estimate if wind/hybrid
+  suitability_score:   float [0–100]       ← derived from classifier probability
   confidence:          "high" | "medium" | "low"
 ```
 
-**Core strategy:**
-1. Find all real solar farms and wind turbines inside the search circle (from datasets)
-2. Fetch weather data (GHI + wind speed) from Open-Meteo for the circle center
-3. Compute energy potential for each energy type using physics formulas + real installation data
-4. Recommend based on energy output; surface the best candidate location
+**Core ML strategy — multi-class classifier:**
+
+A single `RandomForestClassifier` is trained on real US installation locations.
+The key insight: **solar farms were built where solar conditions are best; wind turbines where wind conditions are best; everywhere else was passed over.** This gives us natural labels.
+
+```
+Training labels:
+  "solar"   ← locations of real solar farms     (solar.csv,  5,712 points)
+  "wind"    ← locations of real wind turbines   (wind.csv,  75,727 points)
+  "neither" ← random US locations with no installations nearby
+```
+
+The classifier outputs **class probabilities**:
+- `P(solar)`, `P(wind)`, `P(neither)` for a given location + weather
+- `recommendation = argmax(P(solar), P(wind))` — but only if `P(neither)` is not dominant
+- `suitability_score = (1 − P(neither)) × 100`
+
+Energy estimates (kWh/yr) are computed **after** classification using simple physics
+formulas, driven by the weather features already fetched. ML decides *what*; physics
+estimates *how much*.
 
 ---
 
 ## 2. Datasets
 
-| File | Rows | Key columns used |
-|------|------|-----------------|
-| `solar.csv` | 5,712 | `ylat`, `xlong`, `p_area` (m²), `p_cap_ac` (MW) |
-| `wind.csv` | 75,727 | `ylat`, `xlong`, `t_cap` (kW), `t_rd` rotor diameter (m), `t_rsa` rotor swept area (m²), `t_hh` hub height (m) |
+| File | Rows | Columns used |
+|------|------|-------------|
+| `solar.csv` | 5,712 | `ylat`, `xlong` |
+| `wind.csv` | 75,727 | `ylat`, `xlong` |
 
-Dataset-derived constants (computed from real data):
-- Solar power density: **51 W/m²** (whole-farm footprint, real data median)
-- Median turbine: **2,000 kW**, **100 m** rotor diameter, **80 m** hub height
-- Median rotor swept area: **7,854 m²**
+The installation coordinates are the training signal. Capacity and turbine specs are
+used only in the post-classification energy estimation step.
 
 ---
 
 ## 3. Feature Design
 
-### 3.1 Inside-circle features (from datasets)
+### 3.1 Weather features (primary)
 
-For a given `(center_lat, center_lon, radius_miles)`:
+| Feature | Source | Units | Why it matters |
+|---------|--------|-------|---------------|
+| `ghi_annual` | Open-Meteo `shortwave_radiation` (sum, 2023) | kWh/m²/yr | Primary solar driver |
+| `wind_speed_100m` | Open-Meteo `wind_speed_100m` (mean, 2023) | m/s | Primary wind driver |
 
-| Feature | How computed | Meaning |
-|---------|-------------|---------|
-| `solar_farms_in_circle` | filter solar.csv by Haversine ≤ radius | Existing farms inside search area |
-| `wind_turbines_in_circle` | filter wind.csv by Haversine ≤ radius | Existing turbines inside search area |
-| `n_solar` | len(solar_farms_in_circle) | Count of solar farms |
-| `n_wind` | len(wind_turbines_in_circle) | Count of wind turbines |
-| `solar_cap_mw` | sum(p_cap_ac) for solar in circle | Total installed solar capacity inside circle |
-| `wind_cap_mw` | sum(t_cap / 1000) for turbines in circle | Total installed wind capacity inside circle |
-| `solar_centroid` | mean lat/lon of solar farms in circle | Best candidate solar location |
-| `wind_centroid` | mean lat/lon of wind turbines in circle | Best candidate wind location |
+### 3.2 Location features (secondary)
 
-### 3.2 Weather features (Open-Meteo API)
+| Feature | Derivation | Why it matters |
+|---------|-----------|---------------|
+| `lat` | raw | Encodes climate zone, sun angle |
+| `lon` | raw | Encodes geography (Great Plains, coasts, mountains) |
 
-**Endpoint:** `https://archive-api.open-meteo.com/v1/archive`
+> **Terrain note:** Elevation and slope would improve the model but require an
+> additional dataset. `lat`/`lon` implicitly captures much of this (Rocky Mountains,
+> Great Plains, Gulf Coast) and is sufficient for a hackathon. Add terrain as a
+> future enhancement if time allows.
 
-Query the **center point** with 1-year historical data (2023-01-01 to 2023-12-31):
+### 3.3 Full feature vector
 
-```
-params = {
-  latitude:  center_lat,
-  longitude: center_lon,
-  start_date: "2023-01-01",
-  end_date:   "2023-12-31",
-  hourly: "shortwave_radiation,wind_speed_100m",
-  timezone: "auto"
-}
-```
-
-| Feature | Derived from | Units | Notes |
-|---------|-------------|-------|-------|
-| `ghi_annual` | sum(shortwave_radiation) / 1000 | kWh/m²/yr | Global Horizontal Irradiance |
-| `wind_speed_mean` | mean(wind_speed_100m) | m/s | Mean at 100m hub height |
-
-**Fallback if API unavailable:**
 ```python
-ghi_annual = max(800, 2000 - 22 * abs(center_lat))   # kWh/m²/yr
-wind_speed_mean = 7.0                                  # m/s, US median
+X = [lat, lon, ghi_annual, wind_speed_100m]   # shape: (n_samples, 4)
 ```
 
 ---
 
-## 4. Energy Estimation Logic
+## 4. Training Data Preparation
 
-> These formulas estimate energy for a **standard reference installation** — not the full circle area.
-> Reference sizes: solar = 100 MW farm, wind = 20-turbine project.
+Training requires weather features for all installation locations. Fetching Open-Meteo
+for 80k+ points is infeasible during the hackathon, so use **proxy formulas at
+training time** and **real API values at inference**.
 
-### 4.1 Solar model
+### 4.1 Weather proxies for training
 
-**Reference area** for a 100 MW farm at 51 W/m² density:
 ```python
-ref_solar_area_m2 = (100 * 1e6) / 51.0   # ≈ 1,960,784 m²  (~500 acres)
+# GHI proxy — latitude is the dominant driver of solar irradiance
+ghi_proxy = lambda lat: max(800.0, 2000.0 - 22.0 * abs(lat))   # kWh/m²/yr
+
+# Wind proxy — Great Plains / upper Midwest are the US wind belt
+def wind_proxy(lat, lon):
+    base = 6.5
+    if 35 < lat < 50 and -105 < lon < -85:   # Great Plains
+        base += 2.0
+    if lat > 45:                               # Northern latitudes
+        base += 1.0
+    if lon < -115 or lon > -75:               # West/East coasts
+        base += 0.5
+    return base
 ```
 
-**Energy estimate:**
+These proxies are coarse but sufficient for training — the model is learning geographic
+patterns, and the real API values only improve accuracy at inference.
+
+### 4.2 Negative examples ("neither")
+
 ```python
-GHI_scale = ghi_annual / 1750             # normalize to US reference irradiance
-solar_kwh_yr = 51.0 * GHI_scale * ref_solar_area_m2 * 8760 / 1000
-# Simplifies to:
-solar_kwh_yr = 100_000 * GHI_scale * 8760  # ≈ 175–210 GWh/yr depending on GHI
+import numpy as np
+
+# Sample random US land points
+rng = np.random.default_rng(42)
+n_neg = 10_000   # match rough scale of positive examples
+neg_lats = rng.uniform(24.5, 49.5, n_neg)
+neg_lons = rng.uniform(-124.5, -66.5, n_neg)
+
+# Remove any point within 80 km of an existing installation
+# (use BallTree on combined solar+wind coords for fast filtering)
+neg_df = remove_near_installations(neg_lats, neg_lons, threshold_km=80)
 ```
 
-**Why 51 W/m²?** Median empirical power density from 5,712 real US solar farms. Already encodes panel efficiency, packing ratio, and inverter losses.
-
-### 4.2 Wind model
-
-**Reference installation:** 20 turbines using specs from nearest turbines in circle (or dataset median).
+### 4.3 Assemble training set
 
 ```python
-# Turbine specs: use median from wind_turbines_in_circle if n_wind > 0, else dataset defaults
-turbine_cap_kw = median(t_cap) if n_wind > 0 else 2000    # kW
-rsa_m2         = median(t_rsa) if n_wind > 0 else 7854    # m²
-n_turbines     = 20                                         # reference project size
+import pandas as pd
 
-# Capacity factor from wind speed (empirical, validated against real CF data)
-CF = min(0.60, max(0.05, 0.35 * (wind_speed_mean / 7.0) ** 2.5))
+solar_df = pd.read_csv("solar.csv")[["ylat", "xlong"]].rename(columns={"ylat":"lat","xlong":"lon"})
+wind_df  = pd.read_csv("wind.csv")[["ylat", "xlong"]].rename(columns={"ylat":"lat","xlong":"lon"})
+
+solar_df["label"] = "solar"
+wind_df["label"]  = "wind"
+neg_df["label"]   = "neither"
+
+# Add proxy weather features
+for df in [solar_df, wind_df, neg_df]:
+    df["ghi_annual"]      = df["lat"].apply(ghi_proxy)
+    df["wind_speed_100m"] = df.apply(lambda r: wind_proxy(r.lat, r.lon), axis=1)
+
+train_df = pd.concat([solar_df, wind_df, neg_df], ignore_index=True)
+```
+
+---
+
+## 5. Model Training
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+import joblib
+
+features = ["lat", "lon", "ghi_annual", "wind_speed_100m"]
+X = train_df[features].values
+y = train_df["label"].values
+
+clf = RandomForestClassifier(
+    n_estimators=200,
+    class_weight="balanced",   # compensates for wind class being 10x larger
+    random_state=42,
+    n_jobs=-1
+)
+clf.fit(X, y)
+joblib.dump(clf, "renewables_model.pkl")
+
+# Sanity check: feature importances
+for name, imp in zip(features, clf.feature_importances_):
+    print(f"  {name}: {imp:.3f}")
+# Expected: ghi_annual and wind_speed_100m should rank highest
+```
+
+**One model, one `.pkl` file.** No separate solar/wind models.
+
+---
+
+## 6. Inference Pipeline
+
+At query time, for `(center_lat, center_lon, radius_miles)`:
+
+```python
+# 1. Fetch real weather from Open-Meteo (see Section 7)
+ghi_annual, wind_speed_mean = fetch_weather(center_lat, center_lon)
+
+# 2. Classify
+clf = joblib.load("renewables_model.pkl")
+X_query = [[center_lat, center_lon, ghi_annual, wind_speed_mean]]
+
+proba  = clf.predict_proba(X_query)[0]             # [P(neither), P(solar), P(wind)]
+classes = clf.classes_                              # ordering depends on LabelEncoder
+
+p = dict(zip(classes, proba))
+suitability_score = round((1 - p["neither"]) * 100, 1)
+
+# 3. Recommendation
+if p["neither"] > 0.5:
+    recommendation = "not suitable"
+elif abs(p["solar"] - p["wind"]) < 0.15:           # too close to call
+    recommendation = "hybrid"
+elif p["solar"] > p["wind"]:
+    recommendation = "solar"
+else:
+    recommendation = "wind"
+
+# 4. Confidence label
+margin = abs(p["solar"] - p["wind"])
+if margin > 0.3:   confidence = "high"
+elif margin > 0.1: confidence = "medium"
+else:              confidence = "low"
+```
+
+---
+
+## 7. Weather API (Open-Meteo)
+
+**Endpoint:** `https://archive-api.open-meteo.com/v1/archive`
+
+```python
+params = {
+    "latitude":   center_lat,
+    "longitude":  center_lon,
+    "start_date": "2023-01-01",
+    "end_date":   "2023-12-31",
+    "hourly":     "shortwave_radiation,wind_speed_100m",
+    "timezone":   "auto"
+}
+# ghi_annual      = sum(response["hourly"]["shortwave_radiation"]) / 1000
+# wind_speed_mean = mean(response["hourly"]["wind_speed_100m"])
+```
+
+**Fallback if API unavailable:**
+```python
+ghi_annual      = ghi_proxy(center_lat)
+wind_speed_mean = wind_proxy(center_lat, center_lon)
+```
+
+---
+
+## 8. Post-Classification Energy Estimation
+
+Run only when `recommendation != "not suitable"`. Uses physics formulas on the
+already-fetched weather features — no additional ML needed.
+
+### 8.1 Solar (reference: 100 MW farm)
+
+```python
+REF_SOLAR_AREA_M2 = 1_960_784   # 100 MW at 51 W/m² median density
+GHI_REF = 1750                   # US average kWh/m²/yr
+
+solar_kwh_yr = (ghi_annual / GHI_REF) * 100_000 * 8760   # kWh/yr
+```
+
+### 8.2 Wind (reference: 20-turbine project)
+
+```python
+# Turbine specs: median from wind turbines inside the circle, else dataset defaults
+turbine_cap_kw = median_turbine_cap_in_circle or 2000
+n_turbines     = 20
+CF             = min(0.60, max(0.05, 0.35 * (wind_speed_mean / 7.0) ** 2.5))
 
 wind_kwh_yr = n_turbines * turbine_cap_kw * CF * 8760
 ```
 
-At wind_speed = 7 m/s: `20 × 2000 × 0.35 × 8760 ≈ 122 GWh/yr`
-
 ---
 
-## 5. Best Candidate Location
-
-The model must pin a specific lat/lon on the map as the recommended installation site.
+## 9. Best Candidate Location
 
 ```python
-if n_solar > 0 and recommendation == "solar":
-    best_location = solar_centroid        # center of mass of existing solar farms
-elif n_wind > 0 and recommendation == "wind":
-    best_location = wind_centroid         # center of mass of existing turbines
+solar_in_circle = haversine_filter(solar_df, center_lat, center_lon, radius_miles)
+wind_in_circle  = haversine_filter(wind_df,  center_lat, center_lon, radius_miles)
+
+if recommendation == "solar" and len(solar_in_circle) > 0:
+    best_location = solar_in_circle[["lat", "lon"]].mean().to_dict()
+elif recommendation == "wind" and len(wind_in_circle) > 0:
+    best_location = wind_in_circle[["lat", "lon"]].mean().to_dict()
 else:
-    best_location = (center_lat, center_lon)   # fallback: circle center
-```
-
-**Rationale:** Existing installations concentrate where terrain, grid access, and solar/wind conditions are already proven. Their centroid is a strong prior for the best new site.
-
----
-
-## 6. Recommendation Logic
-
-```python
-MARGIN = 1.2   # require 20% advantage to avoid calling "hybrid"
-
-if solar_kwh_yr > MARGIN * wind_kwh_yr:
-    recommendation = "solar"
-elif wind_kwh_yr > MARGIN * solar_kwh_yr:
-    recommendation = "wind"
-else:
-    recommendation = "hybrid"
+    best_location = {"lat": center_lat, "lon": center_lon}
 ```
 
 ---
 
-## 7. Suitability Score [0–100]
-
-Combines **evidence from existing installations** (historical signal) with **weather quality** (physics signal).
-
-```python
-# Evidence: how many real installations exist inside the circle?
-solar_evidence = min(1.0, n_solar / 10.0)     # saturates at 10 farms
-wind_evidence  = min(1.0, n_wind  / 50.0)     # saturates at 50 turbines
-
-# Weather quality
-ghi_score  = min(1.0, ghi_annual / 2100)               # 2100 = desert SW benchmark
-wind_score = min(1.0, max(0, (wind_speed_mean - 3) / 9))  # 3 m/s cut-in → 12 m/s excellent
-
-# Combined score for each type
-solar_score = 0.5 * solar_evidence + 0.5 * ghi_score
-wind_score  = 0.5 * wind_evidence  + 0.5 * wind_score
-
-suitability_score = round(max(solar_score, wind_score) * 100, 1)
-
-# Confidence: how much data did we find?
-if n_solar + n_wind > 20:   confidence = "high"
-elif n_solar + n_wind > 3:  confidence = "medium"
-else:                        confidence = "low"
-```
-
----
-
-## 8. Simplifying Assumptions
+## 10. Simplifying Assumptions
 
 | Assumption | Value | Justification |
 |------------|-------|---------------|
-| Solar power density | 51 W/m² | Empirical median from dataset |
-| Reference solar farm size | 100 MW | Typical utility-scale |
+| Training weather | proxy formulas (lat/lon based) | Avoids 80k API calls at training time |
+| Negative examples | random US grid, filtered | No label noise from near-installation points |
+| "Neither" threshold | P(neither) > 0.5 | Conservative — don't recommend bad sites |
+| "Hybrid" margin | ΔP < 0.15 | Call hybrid when solar ≈ wind |
+| Reference solar farm | 100 MW | Typical utility-scale |
 | Reference wind project | 20 turbines | Typical small-to-mid project |
-| Reference irradiance | 1750 kWh/m²/yr | US average |
-| CF at 7 m/s | 35% | Industry standard onshore |
-| Weather query | circle center only | At 50-mile scale, weather is spatially uniform |
-| US-only scope | — | Datasets cover continental US only |
+| Weather query | circle center only | Uniform at 50-mile scale |
 | Historical year | 2023 | Recent, complete, available in Open-Meteo |
 
 ---
 
-## 9. Minimal Data Requirements
+## 11. Minimal Data Requirements
 
-**Offline (degraded mode):**
-- `solar.csv` ✓ (present)
-- `wind.csv` ✓ (present)
-- Lat/lon fallback formulas for GHI and wind speed
+**To train (offline, run once):**
+- `solar.csv` ✓
+- `wind.csv` ✓
+- No API calls needed
 
-**Full mode:**
-- Above + Open-Meteo API (free, no API key required)
+**To serve:**
+- `renewables_model.pkl` (output of training)
+- Open-Meteo API (free, no key) with offline fallback
 
 ---
 
-## 10. System Architecture
+## 12. System Architecture
 
 ```
 [Map click → center_lat, center_lon, radius_miles]
         │
-        ├─ [Haversine filter] ──── solar.csv  (BallTree, loaded once at startup)
-        │                    └──── wind.csv   (BallTree, loaded once at startup)
+        ├─ [Open-Meteo API] ──────── ghi_annual, wind_speed_mean
         │
-        ├─ [Open-Meteo API call] ── ghi_annual, wind_speed_mean (async, 1–2s)
+        ├─ [renewables_model.pkl] ── predict_proba → P(solar), P(wind), P(neither)
+        │                            → recommendation, suitability_score, confidence
         │
-        ├─ [Energy Model] ───────── solar_kwh_yr, wind_kwh_yr
+        ├─ [Physics formulas] ─────── solar_kwh_yr, wind_kwh_yr (if suitable)
         │
-        ├─ [Recommendation + Score + best_location]
+        ├─ [BallTree filter] ──────── best_location (centroid of in-circle installs)
         │
-        └─ [JSON response → Frontend map]
+        └─ [JSON → Leaflet.js frontend]
 ```
 
 ### Stack
@@ -246,39 +340,43 @@ else:                        confidence = "low"
 | Layer | Choice | Reason |
 |-------|--------|--------|
 | Backend | Python + FastAPI | Fast to build, async for API calls |
-| Geospatial KNN | scikit-learn BallTree (Haversine) | Sub-millisecond KNN on 75k points |
-| Data | pandas + numpy | CSV loading + vectorized math |
+| ML | scikit-learn RandomForestClassifier | No tuning needed, `predict_proba` built-in |
+| Model persistence | joblib | Standard sklearn serialization |
+| Geospatial filter | scikit-learn BallTree (Haversine) | Fast filter on 80k points |
+| Data | pandas + numpy | CSV loading + math |
 | HTTP client | httpx (async) | Non-blocking Open-Meteo calls |
-| Frontend | Leaflet.js (vanilla JS) | Map + circle overlay, no framework needed |
+| Frontend | Leaflet.js (vanilla JS) | Map + circle overlay, no framework |
 | Hosting | uvicorn (local) | Sufficient for hackathon demo |
 
 ---
 
-## 11. Implementation Plan (24-hour hackathon)
+## 13. Implementation Plan (24-hour hackathon)
 
 | Phase | Hours | Tasks |
 |-------|-------|-------|
-| **1 — Data + Model core** | 0–5h | Load CSVs into BallTree, implement Haversine filter, build solar + wind energy functions, unit-test 5 known US locations |
-| **2 — Weather integration** | 5–8h | Open-Meteo fetch + parse, offline fallback, integrate into model pipeline |
-| **3 — FastAPI backend** | 8–11h | `POST /scout` endpoint accepting `{lat, lon, radius_miles}`, return full JSON response |
-| **4 — Frontend map UI** | 11–17h | Leaflet map, click-to-center, radius slider, draw circle, show best_location pin + result card |
-| **5 — Validation + polish** | 17–22h | Test locations below, edge cases (ocean, no data zones), error handling |
-| **6 — Demo prep** | 22–24h | Script, README, demo video/screenshots |
+| **1 — Training script** | 0–3h | Feature engineering, negative sampling, train classifier, inspect feature importances, save `renewables_model.pkl` |
+| **2 — Inference pipeline** | 3–6h | Load model, `predict_proba`, recommendation + suitability logic, BallTree filter for best_location |
+| **3 — Weather integration** | 6–9h | Open-Meteo fetch, parse GHI + wind speed, offline fallback, end-to-end test on 5 US cities |
+| **4 — FastAPI backend** | 9–12h | `POST /scout` endpoint, physics energy formulas, full JSON response |
+| **5 — Frontend map UI** | 12–18h | Leaflet map, click-to-center, radius slider, draw circle, pin best_location, result card |
+| **6 — Validation + polish** | 18–22h | All test cases below, edge cases, error handling |
+| **7 — Demo prep** | 22–24h | Script, README, screenshots |
 
 ### Validation test cases
 
 | Location | Radius | Expected |
 |----------|--------|---------|
-| Phoenix, AZ (33.4, -112.1) | 50 mi | Solar, high score |
+| Phoenix, AZ (33.4, -112.1) | 50 mi | Solar, high suitability |
 | Amarillo, TX (35.2, -101.8) | 50 mi | Wind or hybrid |
-| North Dakota (47.5, -100.5) | 50 mi | Wind, high score |
-| Seattle, WA (47.6, -122.3) | 50 mi | Low score, low confidence |
-| Mojave Desert, CA (35.0, -117.5) | 50 mi | Solar, very high score |
-| Gulf Coast, TX (27.8, -97.4) | 50 mi | Wind (coastal) |
+| North Dakota (47.5, -100.5) | 50 mi | Wind, high suitability |
+| Seattle, WA (47.6, -122.3) | 50 mi | Low suitability |
+| Mojave Desert, CA (35.0, -117.5) | 50 mi | Solar, very high suitability |
+| Gulf Coast, TX (27.8, -97.4) | 50 mi | Wind |
+| Mid-Atlantic Ocean (38.0, -70.0) | 50 mi | Not suitable |
 
 ---
 
-## 12. API Contract
+## 14. API Contract
 
 ### `POST /scout`
 
@@ -296,10 +394,11 @@ else:                        confidence = "low"
 {
   "recommendation": "solar",
   "best_location": { "lat": 33.41, "lon": -112.08 },
-  "solar_kwh_yr": 175000000,
-  "wind_kwh_yr": 95000000,
-  "suitability_score": 84.3,
+  "solar_kwh_yr": 182000000,
+  "wind_kwh_yr": 91000000,
+  "suitability_score": 91.2,
   "confidence": "high",
+  "probabilities": { "solar": 0.78, "wind": 0.14, "neither": 0.08 },
   "n_solar_in_circle": 7,
   "n_wind_in_circle": 3,
   "ghi_annual": 2150.0,

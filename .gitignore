@@ -8,15 +8,31 @@ __pycache__/
 # C extensions
 *.so
 
+*.nc
+
 pyvenv.cfg
 requirements.txt
+data/era5_monthly_us_1991_2020/
+data/era5_monthly_us_1991_2020.nc
+data/era5_monthly_us_1991_2020_flat.csv
+data/era5_monthly_us_1991_2020_selected.csv
+data/era5_climate_lookup.csv
+data/era5_climate_lookup_clean.csv
+
 
 *.joblib
 
 Lib/
 Scripts/
+<<<<<<< HEAD
 !frontend/src/lib/
 !frontend/src/lib/*.js
+=======
+runs/
+
+
+*.joblib
+>>>>>>> 8170744edd493d09388cddaeb55063072d9771b7
 
 # Distribution / packaging
 .Python

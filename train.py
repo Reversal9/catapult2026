@@ -1,5 +1,8 @@
 import torch.nn as nn
 import torch.optim as optim
+import dataset
+
+train_loader, test_loader = dataset.get_data()
 
 # Define the model
 model = nn.Sequential(

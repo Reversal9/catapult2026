@@ -4,11 +4,11 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import datetime
 
-import dataset
+import model.random_forest.dataset_random_forest as dataset_random_forest
 
-dataset.retrieve_data()
+dataset_random_forest.retrieve_data()
 
-train_loader, test_loader = dataset.get_data()
+train_loader, test_loader = dataset_random_forest.get_data()
 
 
 import torch.nn as nn

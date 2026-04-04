@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 import joblib
+import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
@@ -14,25 +15,49 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import model.random_forest.dataset_random_forest as dataset_random_forest
 import model.era5_dataset_code.era5 as era5
 
 
 MODEL_DIR = Path(__file__).resolve().parent
+DEFAULT_DATASET_PATH = ROOT_DIR / "data" / "processed" / "solar.csv"
+TARGET_COLUMN = "avg_annual_generation"
+
+
+def load_training_dataframe(dataset_path: Path) -> tuple[pd.DataFrame, list[str]]:
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Missing merged training dataset: {dataset_path}")
+
+    df = pd.read_csv(dataset_path)
+    if TARGET_COLUMN not in df.columns:
+        raise KeyError(f"Missing target column '{TARGET_COLUMN}' in {dataset_path}")
+
+    numeric_df = df.apply(pd.to_numeric, errors="coerce")
+    numeric_df = numeric_df.dropna(subset=[TARGET_COLUMN])
+
+    feature_columns = [column for column in numeric_df.columns if column != TARGET_COLUMN]
+    numeric_df = numeric_df[feature_columns + [TARGET_COLUMN]]
+
+    # Drop columns that are entirely empty after numeric coercion.
+    empty_feature_columns = [column for column in feature_columns if numeric_df[column].isna().all()]
+    if empty_feature_columns:
+        numeric_df = numeric_df.drop(columns=empty_feature_columns)
+        feature_columns = [column for column in feature_columns if column not in empty_feature_columns]
+
+    numeric_df = numeric_df.fillna(numeric_df.median(numeric_only=True))
+    return numeric_df, feature_columns
 
 
 def train_model(
-    dataset_path: Path = era5.SOLAR_WITH_ERA5_PATH,
+    dataset_path: Path = DEFAULT_DATASET_PATH,
     test_size: float = 0.2,
     random_state: int = 42,
     n_estimators: int = 300,
     max_depth: int | None = 20,
 ):
-    df = dataset_random_forest.load_training_dataframe(dataset_path=dataset_path)
-    feature_columns = dataset_random_forest.get_training_feature_columns()
+    df, feature_columns = load_training_dataframe(dataset_path=dataset_path)
 
     X = df[feature_columns]
-    y = df["p_cap_ac"]
+    y = df[TARGET_COLUMN]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -81,7 +106,7 @@ def parse_args():
     parser.add_argument("--build-lookup", action="store_true", help="Build the nearest-cell ERA5 climate lookup CSV")
     parser.add_argument("--build-dataset", action="store_true", help="Merge solar.csv with the ERA5 lookup")
     parser.add_argument("--era5-path", type=Path, default=era5.ERA5_RAW_PATH, help="Path to the ERA5 NetCDF file")
-    parser.add_argument("--dataset-path", type=Path, default=era5.SOLAR_WITH_ERA5_PATH, help="Path to the merged dataset CSV")
+    parser.add_argument("--dataset-path", type=Path, default=DEFAULT_DATASET_PATH, help="Path to the training dataset CSV")
     parser.add_argument("--test-size", type=float, default=0.2, help="Fraction reserved for evaluation")
     parser.add_argument("--random-state", type=int, default=42, help="Random seed")
     parser.add_argument("--n-estimators", type=int, default=300, help="Random forest tree count")

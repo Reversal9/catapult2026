@@ -1,0 +1,4 @@
+source_year,system_tier,technology,benchmark_usd_per_w,source,notes
+2024,residential,ResPV,2.80,NREL ATB seeded local table,"Seeded local file. Refresh with backend/cost/update_sources.py from official ATB data."
+2024,commercial,CommercialPV,1.75,NREL ATB seeded local table,"Seeded local file. Refresh with backend/cost/update_sources.py from official ATB data."
+2024,utility,UtilityPV,1.16,NREL ATB seeded local table,"Seeded local file. Refresh with backend/cost/update_sources.py from official ATB data."

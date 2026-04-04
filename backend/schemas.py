@@ -36,6 +36,7 @@ class SolarAnalysisRequest(BaseModel):
     )
     panel_tilt_deg: float = Field(default=DEFAULT_PANEL_TILT_DEG, ge=0, le=90)
     panel_azimuth_deg: float = Field(default=DEFAULT_PANEL_AZIMUTH_DEG, ge=0, le=360)
+    state: str | None = Field(default=None, min_length=2, max_length=2)
 
 
 class SolarAnalysisResponse(BaseModel):

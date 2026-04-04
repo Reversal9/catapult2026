@@ -9,6 +9,15 @@ from geometry import polygon_area_and_centroid
 from model_predictor import get_predictor
 from schemas import Coordinate, SolarAnalysisRequest, SolarAnalysisResponse
 
+# Try to import cost module, but handle if it's not available
+try:
+    from cost.cost import estimate_solar_project_cost
+    COST_MODULE_AVAILABLE = True
+    COST_FUNCTION = estimate_solar_project_cost
+except ImportError:
+    COST_MODULE_AVAILABLE = False
+    COST_FUNCTION = None
+
 
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 MINIMUM_USEFUL_PANEL_COUNT = 12
@@ -70,6 +79,82 @@ def _suitability_from_ghi(ghi_annual: float, panel_count: int) -> float:
     return round(0.7 * ghi_score + 0.3 * capacity_score, 1)
 
 
+def _estimate_panel_dimensions_from_area(panel_area_m2: float) -> tuple[float, float]:
+    """
+    Estimate panel length and width from area assuming standard aspect ratio.
+    Most solar panels have aspect ratio around 1.7:1 (length:width).
+    """
+    # Assume aspect ratio of 1.7:1 (typical for solar panels)
+    aspect_ratio = 1.7
+    # width = sqrt(area / aspect_ratio)
+    width_m = (panel_area_m2 / aspect_ratio) ** 0.5
+    length_m = width_m * aspect_ratio
+    return length_m, width_m
+
+
+def _calculate_costs_with_cost_module(
+    area_m2: float,
+    panel_area_m2: float,
+    panel_rating_w: float,
+    packing_efficiency: float,
+    performance_ratio: float,
+    sunlight_intensity_kwh_m2_yr: float,
+    state: str = "CA"  # Default to California if not specified
+) -> tuple[float, float, float]:
+    """
+    Calculate costs using the cost.py module.
+    Returns: (panel_cost_usd, construction_cost_usd, total_project_cost_usd)
+    """
+    if not COST_MODULE_AVAILABLE or COST_FUNCTION is None:
+        raise ImportError("Cost module not available")
+
+    # Convert sunlight intensity from kWh/m²/yr to kWh/m²/day for cost module
+    ghi_kwh_m2_day = sunlight_intensity_kwh_m2_yr / 365.0
+
+    # Estimate panel dimensions from area
+    panel_length_m, panel_width_m = _estimate_panel_dimensions_from_area(panel_area_m2)
+
+    # Create panel specs in the format expected by cost.py
+    panel_specs = {
+        "length_m": panel_length_m,
+        "width_m": panel_width_m,
+        "STC_W": panel_rating_w,
+    }
+
+    try:
+        # Use the cost pipeline
+        cost_result = COST_FUNCTION(
+            area_m2=area_m2,
+            panel_specs=panel_specs,
+            state=state,
+            year=2026,  # Current year for ITC calculation
+            ghi_kwh_m2_day=ghi_kwh_m2_day,
+            packing_factor=packing_efficiency,
+            performance_ratio=performance_ratio,
+            state_rebate_usd=0.0,  # No state rebate by default
+        )
+
+        # Extract costs from the result
+        system_size = cost_result["layer_1_system_size"]
+        incentives = cost_result["layer_4_incentives"]
+
+        # The cost module doesn't separate panel vs construction cost directly
+        # We'll estimate based on the system size
+        panel_count = system_size["n_panels"]
+
+        # For now, use a simple allocation: assume panels are 40% of total cost
+        # This is a rough estimate - in reality it varies by project
+        total_cost = incentives["net_cost_usd"]
+        panel_cost = total_cost * 0.4
+        construction_cost = total_cost * 0.6
+
+        return panel_cost, construction_cost, total_cost
+
+    except Exception as e:
+        # If cost module fails, fall back to simple calculation
+        raise ValueError(f"Cost module failed: {e}")
+
+
 def analyze_solar_polygon(request: SolarAnalysisRequest) -> SolarAnalysisResponse:
     area_m2, centroid = polygon_area_and_centroid(request.points)
     area_km2 = area_m2 / 1_000_000.0
@@ -110,9 +195,33 @@ def analyze_solar_polygon(request: SolarAnalysisRequest) -> SolarAnalysisRespons
         model_source = "physics-fallback"
 
     # --- Cost ---
-    panel_cost_usd = panel_count * request.panel_cost_usd
-    construction_cost_usd = area_m2 * request.construction_cost_per_m2_usd
-    total_project_cost_usd = panel_cost_usd + construction_cost_usd
+    # Try to use the cost module if state is provided and module is available
+    use_cost_module = COST_MODULE_AVAILABLE and request.state is not None
+
+    if use_cost_module:
+        try:
+            # request.state is not None here due to the check above
+            state_str = request.state  # type: ignore
+            panel_cost_usd, construction_cost_usd, total_project_cost_usd = _calculate_costs_with_cost_module(
+                area_m2=area_m2,
+                panel_area_m2=request.panel_area_m2,
+                panel_rating_w=request.panel_rating_w,
+                packing_efficiency=request.packing_efficiency,
+                performance_ratio=request.performance_ratio,
+                sunlight_intensity_kwh_m2_yr=sunlight_intensity_kwh_m2_yr,
+                state=state_str
+            )
+        except Exception as e:
+            # Fall back to simple calculation if cost module fails
+            print(f"Cost module failed, falling back to simple calculation: {e}")
+            panel_cost_usd = panel_count * request.panel_cost_usd
+            construction_cost_usd = area_m2 * request.construction_cost_per_m2_usd
+            total_project_cost_usd = panel_cost_usd + construction_cost_usd
+    else:
+        # Use simple calculation if cost module not available or no state provided
+        panel_cost_usd = panel_count * request.panel_cost_usd
+        construction_cost_usd = area_m2 * request.construction_cost_per_m2_usd
+        total_project_cost_usd = panel_cost_usd + construction_cost_usd
 
     # --- Suitability verdict ---
     reasons = []

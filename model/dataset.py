@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import random_split
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+import numpy as np
 import pandas as pd
 import utils
 
@@ -57,28 +59,41 @@ def process_wind_data():
     final_df.to_csv("data/processed/wind.csv", index=False)
 
 def get_data(path, feature_cols, label_col="avg_annual_generation", batch_size=32, train_frac=0.8):
-    
+
     df = pd.read_csv(path)
-    
-    df.fillna(0, inplace=True)
-    
-    df = df.sample(frac=1).reset_index(drop=True)
-    
-    X = df[feature_cols].values
+
+    df = df[df[label_col].notna() & (df[label_col] > 0)].reset_index(drop=True) #delete not na
+    df[label_col] = np.log1p(df[label_col]) #TODO log transform labels for now, undo LATER
+    df[feature_cols] = df[feature_cols].astype(float)
+
+    df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+
     train_size = int(train_frac * len(df))
-    scaler = StandardScaler()
-    scaler.fit(X[:train_size])
-    df[feature_cols] = scaler.transform(X)
 
-    dataset = RenewableDataset(df, feature_cols, label_col)
+    X = df[feature_cols].values
+    y = df[label_col].values
 
-    train_dataset = torch.utils.data.Subset(dataset, range(train_size))
-    test_dataset  = torch.utils.data.Subset(dataset, range(train_size, len(dataset)))
-    
+    X_train, X_test = X[:train_size], X[train_size:]
+    y_train, y_test = y[:train_size], y[train_size:]
+
+    imputer = SimpleImputer(strategy="median") #Filling NA tilt/azimuth vals
+    X_train = imputer.fit_transform(X_train)
+    X_test  = imputer.transform(X_test)
+
+    scaler = StandardScaler() #Normalize
+    X_train = scaler.fit_transform(X_train)
+    X_test  = scaler.transform(X_test)
+
+    train_dataset = torch.utils.data.TensorDataset(
+        torch.tensor(X_train, dtype=torch.float32),
+        torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
+    )
+    test_dataset = torch.utils.data.TensorDataset(
+        torch.tensor(X_test, dtype=torch.float32),
+        torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
+    )
+
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
 
-    test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    
-    input_size = len(feature_cols)
-    
-    return train_loader, test_loader, input_size
+    return train_loader, test_loader, len(feature_cols)

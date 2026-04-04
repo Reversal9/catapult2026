@@ -7,6 +7,7 @@ from torchmetrics import R2Score
 import dataset
 from dataset import SOLAR_MODEL_FEATURES, WIND_MODEL_FEATURES
 
+torch.manual_seed(17)
 batch_size = 32
 train_loader, test_loader, ds_size = dataset.get_data("data/processed/solar.csv", SOLAR_MODEL_FEATURES, batch_size=32)
 
@@ -20,7 +21,7 @@ class Habakkuk(nn.Module):
         self.fc1 = nn.Linear(input_size, 480)
         self.fc2 = nn.Linear(480, 100)
         self.fc3 = nn.Linear(100, 24)
-        self.do = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.2)
         self.fc4 = nn.Linear(24, 6)
         self.fc5 = nn.Linear(6, 1)
 
@@ -28,7 +29,7 @@ class Habakkuk(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
-        #x = self.do(x)
+        x = self.dropout(x)
         x = F.relu(self.fc4(x))
         x = self.fc5(x)
         return x
@@ -75,18 +76,26 @@ def test_loop(model):
     
     return avg_loss, r2_score
 
-def train_loop():
+def train_loop(epochs=100):
     
     model = Habakkuk(ds_size)
-    loss_fn = nn.MSELoss()  # mean square error
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    loss_fn = nn.HuberLoss(delta=1.0)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-3)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=7
+    )
 
-    EPOCHS = 100
+    best_loss = float('inf')
+    for epoch in range(1, epochs + 1):
+        train_loss = train_one_epoch(model, optimizer, loss_fn)
+        val_loss, val_r2 = test_loop(model)
+        scheduler.step(val_loss)
 
-    for epoch in range(0, EPOCHS):
-        model.train(True)
-        avg_loss = train_one_epoch(model, optimizer, loss_fn)
-        print(f'EPOCH {epoch + 1}, LOSS: {avg_loss}')
+        if val_loss < best_loss:
+            best_loss = val_loss
+
+        print(f"EPOCH {epoch:3d} | train={train_loss:.4f} | val={val_loss:.4f} | R²={val_r2:.4f} | lr={optimizer.param_groups[0]['lr']:.2e}")
+
 
     return model
     

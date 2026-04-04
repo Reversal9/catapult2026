@@ -161,6 +161,9 @@ class InfrastructureAnalysisRequest(BaseModel):
     terrain_provider: Literal["opentopodata", "proxy"] = Field(default="opentopodata")
     include_debug_layers: bool = Field(default=False)
     solar_spec: SolarAssetSpec = Field(default_factory=SolarAssetSpec)
+    allowed_use_types: list[Literal["solar", "wind", "data_center"]] = Field(
+        default_factory=lambda: ["solar", "wind", "data_center"]
+    )
 
 
 class CandidateRegion(BaseModel):

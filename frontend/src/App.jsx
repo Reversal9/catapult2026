@@ -388,6 +388,7 @@ function App() {
           terrain_provider: terrainProvider,
           cell_size_m: cellSizeMeters,
           solar_spec: solarSpec,
+          allowed_use_types: ["solar", "wind", "data_center"],
         });
         const mappedResult = mapInfrastructureResult(infrastructureResult, {
           imageryProvider,
@@ -405,6 +406,7 @@ function App() {
           terrain_provider: terrainProvider,
           cell_size_m: cellSizeMeters,
           solar_spec: solarSpec,
+          allowed_use_types: ["solar"],
         });
         const presetName =
           modelMode === "predefined"

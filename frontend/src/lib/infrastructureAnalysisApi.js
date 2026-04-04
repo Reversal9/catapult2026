@@ -11,6 +11,7 @@ export const buildInfrastructureRequest = (region, overrides = {}) => ({
   terrain_provider: overrides.terrain_provider ?? "opentopodata",
   include_debug_layers: overrides.include_debug_layers ?? false,
   solar_spec: overrides.solar_spec,
+  allowed_use_types: overrides.allowed_use_types,
 });
 
 export const analyzeInfrastructureRegion = async (region, overrides = {}) => {

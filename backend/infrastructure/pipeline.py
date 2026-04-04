@@ -66,25 +66,35 @@ def analyze_infrastructure_polygon(
     )
 
     candidates = []
+    pretrim_candidate_counts = {"solar": 0, "wind": 0, "data_center": 0}
     solar_rejections = {
         "low_usable_area": 0,
         "low_panel_count": 0,
         "low_score": 0,
     }
+    allowed_use_types = set(request.allowed_use_types)
     for index, cell in enumerate(cells, start=1):
-        solar, solar_rejection_reason = evaluate_solar_candidate(
-            cell,
-            index,
-            request.solar_spec,
-        )
-        if solar is not None:
-            candidates.append(solar)
-        elif solar_rejection_reason in solar_rejections:
-            solar_rejections[solar_rejection_reason] += 1
-        for builder in (wind_candidate, data_center_candidate):
-            candidate = builder(cell, index)
+        if "solar" in allowed_use_types:
+            solar, solar_rejection_reason = evaluate_solar_candidate(
+                cell,
+                index,
+                request.solar_spec,
+            )
+            if solar is not None:
+                candidates.append(solar)
+                pretrim_candidate_counts["solar"] += 1
+            elif solar_rejection_reason in solar_rejections:
+                solar_rejections[solar_rejection_reason] += 1
+        if "wind" in allowed_use_types:
+            candidate = wind_candidate(cell, index)
             if candidate is not None:
                 candidates.append(candidate)
+                pretrim_candidate_counts["wind"] += 1
+        if "data_center" in allowed_use_types:
+            candidate = data_center_candidate(cell, index)
+            if candidate is not None:
+                candidates.append(candidate)
+                pretrim_candidate_counts["data_center"] += 1
 
     candidates.sort(key=lambda candidate: candidate.feasibility_score, reverse=True)
     candidates = candidates[:80]
@@ -124,6 +134,7 @@ def analyze_infrastructure_polygon(
             "terrain_provider": request.terrain_provider,
             "include_debug_layers": request.include_debug_layers,
             "point_count": len(request.points),
+            "allowed_use_types": request.allowed_use_types,
             "solar_spec": {
                 "panel_area_m2": request.solar_spec.panel_area_m2,
                 "panel_rating_w": request.solar_spec.panel_rating_w,
@@ -152,6 +163,7 @@ def analyze_infrastructure_polygon(
             "segmentation": segmentation_source,
             "terrain": terrain_source,
         },
+        "pretrim_candidate_counts": pretrim_candidate_counts,
         "candidate_counts": candidate_counts,
         "solar_rejections": solar_rejections,
         "model_source": model_source,

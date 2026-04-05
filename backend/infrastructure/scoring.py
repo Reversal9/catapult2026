@@ -328,7 +328,7 @@ def _build_solar_panel_placements(
     if total_count <= 0:
         return [], 0, 0
 
-    display_limit = min(total_count, 320)
+    display_limit = min(total_count, 1500)
     total_area_m2 = max(sum(valid_region_areas_m2), 1.0)
     remaining = display_limit
     for region_index, region in enumerate(valid_region_polygons):
@@ -1024,16 +1024,16 @@ def wind_candidate(
         imagery=imagery,
         buildings=buildings,
         roads=roads,
-        max_built_ratio=0.04 if buildings else 0.12,
-        min_road_distance_m=36.0,
-        max_water_ratio=0.05,
-        max_shadow_ratio=0.4,
-        max_vegetation_ratio=0.55,
-        max_impervious_ratio=0.75,
+        max_built_ratio=0.08 if buildings else 0.22,
+        min_road_distance_m=20.0,
+        max_water_ratio=0.10,
+        max_shadow_ratio=0.95,  # shadow irrelevant for turbines
+        max_vegetation_ratio=0.90,  # crops/fields are viable turbine land
+        max_impervious_ratio=0.85,
         max_slope_deg=8.0,
         grid_size=12 if (buildings or roads) else 8,
     )
-    if open_land < 18_000:
+    if open_land < 10_000:
         return None
 
     wind_speed = wind_speed_proxy(cell["center_lat"], cell["center_lon"])
@@ -1059,7 +1059,7 @@ def wind_candidate(
         ),
         1,
     )
-    if score < 58:
+    if score < 45:
         return None
 
     primary_polygon = (

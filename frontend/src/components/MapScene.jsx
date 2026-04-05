@@ -77,11 +77,8 @@ function MapScene({
       : "&copy; OpenStreetMap contributors &copy; CARTO";
   const candidatesToRender = useMemo(() => {
     if (!result?.candidates) return [];
-    if (result.type === "solar_siting") {
-      return selectedCandidate ? [selectedCandidate] : result.candidates.slice(0, 1);
-    }
     return result.candidates;
-  }, [result, selectedCandidate]);
+  }, [result]);
 
   return (
     <div className="map-layer" aria-hidden={!landingHidden}>
@@ -126,7 +123,7 @@ function MapScene({
           />
         )}
 
-        {(result?.type === "infrastructure" || result?.type === "solar_siting") &&
+        {(result?.type === "infrastructure" || result?.type === "solar_siting" || result?.type === "wind_siting" || result?.type === "data_center_siting") &&
           candidatesToRender.map((candidate) => {
             const colors = CANDIDATE_COLORS[candidate.useType];
             const isSelected = candidate.id === selectedCandidateId;
@@ -136,37 +133,32 @@ function MapScene({
                 : candidate.useType === "solar" && candidate.packingBlockPolygons?.length > 0
                   ? candidate.packingBlockPolygons
                   : [];
-            const showEnvelope =
-              candidate.useType === "data_center" || placementPolygons.length === 0 || isSelected;
             return (
               <React.Fragment key={candidate.id}>
-                {showEnvelope &&
-                  (candidate.validRegionPolygons ?? [candidate.polygon]).map(
-                    (polygon, polygonIndex) => (
-                      <Polygon
-                        key={`${candidate.id}-valid-${polygonIndex}`}
-                        positions={polygon}
-                        eventHandlers={{
-                          click: () => onSelectCandidate(candidate.id),
-                        }}
-                        pathOptions={{
-                          color: colors.stroke,
-                          weight: isSelected ? 2.6 : 1.2,
-                          fillColor: colors.fill,
-                          fillOpacity:
-                            candidate.useType === "data_center"
-                              ? isSelected
-                                ? 0.26
-                                : 0.12
-                              : isSelected
-                                ? 0.06
-                                : 0.02,
-                          dashArray:
-                            candidate.useType === "data_center" ? undefined : "5 6",
-                        }}
-                      />
-                    ),
-                  )}
+                {(candidate.validRegionPolygons ?? [candidate.polygon]).map(
+                  (polygon, polygonIndex) => (
+                    <Polygon
+                      key={`${candidate.id}-valid-${polygonIndex}`}
+                      positions={polygon}
+                      eventHandlers={{
+                        click: () => onSelectCandidate(candidate.id),
+                      }}
+                      pathOptions={{
+                        color: colors.stroke,
+                        weight: isSelected ? 2.6 : 1.2,
+                        fillColor: colors.fill,
+                        fillOpacity:
+                          candidate.useType === "data_center"
+                            ? isSelected ? 0.26 : 0.12
+                            : candidate.useType === "solar"
+                              ? isSelected ? 0.30 : 0.22
+                              : isSelected ? 0.18 : 0.08,
+                        dashArray:
+                          candidate.useType === "data_center" ? undefined : "5 6",
+                      }}
+                    />
+                  ),
+                )}
                 {placementPolygons.map((polygon, polygonIndex) => (
                   <Polygon
                     key={`${candidate.id}-placement-${polygonIndex}`}
@@ -258,7 +250,7 @@ function MapScene({
             offset={[0, -18]}
             eventHandlers={{ remove: () => onSetStatsVisible(false) }}
           >
-            {(result.type === "infrastructure" || result.type === "solar_siting") &&
+            {(result.type === "infrastructure" || result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting") &&
             selectedCandidate ? (
               <div className="result-popup">
                 <h3>{selectedCandidate.useLabel} Candidate</h3>
@@ -335,7 +327,7 @@ function MapScene({
                   {result.dataSources.terrain}
                 </p>
               </div>
-            ) : result.type === "infrastructure" || result.type === "solar_siting" ? (
+            ) : result.type === "infrastructure" || result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting" ? (
               <div className="result-popup">
                 <h3>{result.label}</h3>
                 <p>Area: {result.areaKm2.toFixed(2)} km²</p>
@@ -348,7 +340,11 @@ function MapScene({
                 <p>
                   {result.type === "solar_siting"
                     ? "No valid solar-ready subregions cleared the current screening settings."
-                    : "No buildable subregions cleared the current screening settings."}
+                    : result.type === "wind_siting"
+                      ? "No valid wind-ready subregions cleared the current screening settings."
+                      : result.type === "data_center_siting"
+                        ? "No valid data center subregions cleared the current screening settings."
+                        : "No buildable subregions cleared the current screening settings."}
                 </p>
                 <p>
                   Sources: {result.dataSources.imagery},{" "}

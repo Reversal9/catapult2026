@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import HelpButton from "./HelpButton";
 import {
   INFRASTRUCTURE_IMAGERY_PROVIDERS,
@@ -46,9 +46,42 @@ function ControlPanel({
   onSelectCandidate,
   onRunAnalysis,
   onOpenTrend,
+  onOpenReport,
 }) {
-  const topCandidates =
-    result?.candidates ? result.candidates.slice(0, 6) : [];
+  const INITIAL_FILTERS = { minScore: "", maxCostM: "", minAreaKm2: "", sortBy: "score" };
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [showAll, setShowAll] = useState(false);
+  const PILL_PAGE = 12;
+
+  // Reset filters whenever a new result arrives
+  useEffect(() => {
+    setFilters(INITIAL_FILTERS);
+    setShowAll(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
+
+  const isSitingResult =
+    result?.type === "infrastructure" ||
+    result?.type === "solar_siting" ||
+    result?.type === "wind_siting" ||
+    result?.type === "data_center_siting";
+
+  const filteredCandidates = (() => {
+    if (!isSitingResult) return [];
+    let list = [...(result.candidates ?? [])];
+    if (filters.minScore !== "") list = list.filter((c) => c.feasibilityScore >= Number(filters.minScore));
+    if (filters.maxCostM !== "") list = list.filter((c) => c.estimatedInstallationCostUsd <= Number(filters.maxCostM) * 1_000_000);
+    if (filters.minAreaKm2 !== "") list = list.filter((c) => c.areaKm2 >= Number(filters.minAreaKm2));
+    if (filters.sortBy === "score") list.sort((a, b) => b.feasibilityScore - a.feasibilityScore);
+    else if (filters.sortBy === "cost_asc") list.sort((a, b) => a.estimatedInstallationCostUsd - b.estimatedInstallationCostUsd);
+    else if (filters.sortBy === "cost_desc") list.sort((a, b) => b.estimatedInstallationCostUsd - a.estimatedInstallationCostUsd);
+    else if (filters.sortBy === "area_desc") list.sort((a, b) => b.areaKm2 - a.areaKm2);
+    else if (filters.sortBy === "area_asc") list.sort((a, b) => a.areaKm2 - b.areaKm2);
+    return list;
+  })();
+
+  const visibleCandidates = showAll ? filteredCandidates : filteredCandidates.slice(0, PILL_PAGE);
+  const hasActiveFilters = filters.minScore !== "" || filters.maxCostM !== "" || filters.minAreaKm2 !== "";
 
   return (
     <section
@@ -77,9 +110,18 @@ function ControlPanel({
       {!collapsed && (
         <>
           <section className="panel-section">
-            <div className="panel-section-header">
-              <h3>Region</h3>
-              <p>Define the area you want the backend to analyze.</p>
+            <div className="panel-section-header with-action">
+              <div>
+                <h3>Selection Mode</h3>
+                <p>Define the area you want the backend to analyze.</p>
+              </div>
+              <button
+                type="button"
+                className={advancedOpen ? "expanded region-advanced-toggle" : "region-advanced-toggle"}
+                onClick={onToggleAdvanced}
+              >
+                Advanced settings
+              </button>
             </div>
             <div className="coords-row">
               <label>
@@ -110,20 +152,6 @@ function ControlPanel({
                 {p2Error && <small className="field-error">{p2Error}</small>}
               </label>
             </div>
-          </section>
-
-          <section className="panel-section advanced-block">
-            <div className="panel-section-header">
-              <h3>Selection Mode</h3>
-              <p>Switch between quick rectangle mode and custom map-drawn shapes.</p>
-            </div>
-            <button
-              type="button"
-              className={advancedOpen ? "expanded" : ""}
-              onClick={onToggleAdvanced}
-            >
-              Advanced settings
-            </button>
 
             <div className={`advanced-menu ${advancedOpen ? "open" : ""}`}>
               <div className="mode-row">
@@ -257,7 +285,7 @@ function ControlPanel({
               </section>
             )}
 
-          {(energyType === "infrastructure" || energyType === "solar") && (
+          {(energyType === "infrastructure" || energyType === "solar" || energyType === "wind" || energyType === "data_center") && (
             <section className="panel-section">
               <div className="panel-section-header">
                 <h3>Data Sources</h3>
@@ -338,7 +366,7 @@ function ControlPanel({
             </button>
           </div>
 
-          {(result?.type === "infrastructure" || result?.type === "solar_siting") && (
+          {isSitingResult && (
             <section
               className="candidate-results panel-section"
               aria-label="Infrastructure candidates"
@@ -346,12 +374,22 @@ function ControlPanel({
               <div className="candidate-summary">
                 <div>
                   <strong>{result.candidateCount}</strong>{" "}
-                  {result.type === "solar_siting" ? "valid solar subregions" : "ranked candidates"}
+                  {result.type === "solar_siting"
+                    ? "valid solar subregions"
+                    : result.type === "wind_siting"
+                      ? "valid wind subregions"
+                      : result.type === "data_center_siting"
+                        ? "valid data center subregions"
+                        : "ranked candidates"}
                 </div>
                 <div>
                   {result.type === "solar_siting"
                     ? "These highlighted subregions passed imagery, vector, and terrain screening and were then packed with the selected solar preset."
-                    : "Each dashed outline is a buildable subregion. The shapes inside show where the selected equipment can fit."}
+                    : result.type === "wind_siting"
+                      ? "These highlighted subregions passed imagery, vector, and terrain screening for wind turbine placement."
+                      : result.type === "data_center_siting"
+                        ? "These highlighted subregions passed terrain and access screening for data center siting."
+                        : "Each dashed outline is a buildable subregion. The shapes inside show where the selected equipment can fit."}
                 </div>
                 <div>
                   Sources: {result.dataSources.imagery},{" "}
@@ -361,8 +399,71 @@ function ControlPanel({
                 </div>
               </div>
 
+              <div className="candidate-filters">
+                <div className="candidate-filter-row">
+                  <label>
+                    Sort
+                    <select
+                      value={filters.sortBy}
+                      onChange={(e) => setFilters((f) => ({ ...f, sortBy: e.target.value }))}
+                    >
+                      <option value="score">Score ↓</option>
+                      <option value="cost_asc">Cost ↑</option>
+                      <option value="cost_desc">Cost ↓</option>
+                      <option value="area_desc">Area ↓</option>
+                      <option value="area_asc">Area ↑</option>
+                    </select>
+                  </label>
+                  <label>
+                    Min score
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="0"
+                      value={filters.minScore}
+                      onChange={(e) => { setShowAll(false); setFilters((f) => ({ ...f, minScore: e.target.value })); }}
+                    />
+                  </label>
+                  <label>
+                    Max cost ($M)
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="any"
+                      value={filters.maxCostM}
+                      onChange={(e) => { setShowAll(false); setFilters((f) => ({ ...f, maxCostM: e.target.value })); }}
+                    />
+                  </label>
+                  <label>
+                    Min area (km²)
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={filters.minAreaKm2}
+                      onChange={(e) => { setShowAll(false); setFilters((f) => ({ ...f, minAreaKm2: e.target.value })); }}
+                    />
+                  </label>
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      className="filter-clear-btn"
+                      onClick={() => { setFilters(INITIAL_FILTERS); setShowAll(false); }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="candidate-filter-count">
+                  {filteredCandidates.length === result.candidateCount
+                    ? `${result.candidateCount} subregions`
+                    : `${filteredCandidates.length} of ${result.candidateCount} subregions`}
+                </div>
+              </div>
+
               <div className="candidate-strip">
-                {topCandidates.map((candidate) => (
+                {visibleCandidates.map((candidate) => (
                   <button
                     key={candidate.id}
                     type="button"
@@ -375,9 +476,27 @@ function ControlPanel({
                   >
                     <span>{candidate.useLabel}</span>
                     <strong>{candidate.feasibilityScore.toFixed(1)}</strong>
+                    <small>
+                      {candidate.areaKm2.toFixed(2)} km² ·{" "}
+                      ${(candidate.estimatedInstallationCostUsd / 1_000_000).toFixed(1)}M
+                    </small>
                   </button>
                 ))}
+                {filteredCandidates.length === 0 && (
+                  <p className="candidate-filter-empty">No subregions match the current filters.</p>
+                )}
               </div>
+              {filteredCandidates.length > PILL_PAGE && (
+                <button
+                  type="button"
+                  className="filter-show-more-btn"
+                  onClick={() => setShowAll((v) => !v)}
+                >
+                  {showAll
+                    ? "Show fewer"
+                    : `Show all ${filteredCandidates.length}`}
+                </button>
+              )}
             </section>
           )}
 
@@ -388,24 +507,46 @@ function ControlPanel({
             >
               <div className="asset-result-header">
                 <div>
-                  <h3>{result.label} Summary</h3>
+                  <h3>
+                    {result.type === "data_center_siting"
+                      ? result.label
+                      : `${result.label} Summary`}
+                  </h3>
                   <p>{result.scoreExplanation}</p>
                 </div>
-                <div
-                  className={`score-badge ${result.suitable ? "good" : "caution"}`}
-                >
-                  <span>Score {result.feasibilityScore.toFixed(1)}</span>
-                  <HelpButton
-                    label="Feasibility score"
-                    help="This score is a simple fit check from 0 to 100. Higher means the site better matches the main needs for this asset, such as space, weather, and build practicality."
-                  />
-                </div>
+                {result.type === "data_center_siting" ? (
+                  <button
+                    type="button"
+                    className="secondary-button report-button"
+                    onClick={onOpenReport}
+                  >
+                    Open report
+                  </button>
+                ) : (
+                  <div
+                    className={`score-badge ${result.suitable ? "good" : "caution"}`}
+                  >
+                    <span>Score {result.feasibilityScore.toFixed(1)}</span>
+                    <HelpButton
+                      label="Feasibility score"
+                      help="This score is a simple fit check from 0 to 100. Higher means the site better matches the main needs for this asset, such as space, weather, and build practicality."
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="asset-metrics">
                 <p>Selected area: {result.areaKm2.toFixed(2)} km²</p>
-                {result.type === "solar_siting" && (
-                  <p>Valid buildable solar area: {result.validAreaKm2.toFixed(2)} km²</p>
+                {(result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting") && (
+                  <p>
+                    Valid buildable{" "}
+                    {result.type === "solar_siting"
+                      ? "solar"
+                      : result.type === "wind_siting"
+                        ? "wind"
+                        : "data center"}{" "}
+                    area: {result.validAreaKm2.toFixed(2)} km²
+                  </p>
                 )}
                 {result.assetCount !== null &&
                   result.assetCount !== undefined && (
@@ -415,9 +556,11 @@ function ControlPanel({
                         ? "units"
                         : result.type === "solar_siting"
                           ? "panels"
-                        : result.type === "wind"
-                          ? "turbines"
-                          : "campuses"}
+                          : result.type === "wind" || result.type === "wind_siting"
+                            ? "turbines"
+                            : result.type === "data_center_siting"
+                              ? "campuses"
+                              : "campuses"}
                       : {result.assetCount.toLocaleString()}
                     </p>
                   )}
@@ -437,7 +580,7 @@ function ControlPanel({
                   Estimated project cost: ${result.totalCost.toLocaleString()}
                 </p>
                 <p>{result.suitabilityReason}</p>
-                {result.type === "solar_siting" && (
+                {(result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting") && (
                   <p>
                     Sources: {result.dataSources.imagery},{" "}
                     {result.dataSources.vector_data},{" "}

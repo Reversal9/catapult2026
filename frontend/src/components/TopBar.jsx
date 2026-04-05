@@ -24,7 +24,7 @@ function TopBar({
   return (
     <div className="top-strip">
       <div className="title-chip">
-        <h1>Renewables Site Scout</h1>
+        <h1>Site Scouter</h1>
         <p>
           Choose a region, pick an asset, and compare build-ready results with
           clear explanations.

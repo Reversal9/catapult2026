@@ -959,6 +959,14 @@
   text-align: center;
 }
 
+.landing-logo {
+  display: block;
+  width: clamp(120px, 26vw, 150px);
+  height: auto;
+  margin: 0 auto 14px;
+  object-fit: cover;
+}
+
 .kicker {
   margin: 0;
   text-transform: uppercase;
@@ -1006,5 +1014,346 @@
 
   .actions-row .primary {
     width: 100%;
+  }
+
+  .landing-logo {
+    width: clamp(100px, 40vw, 170px);
+    margin-bottom: 12px;
+  }
+}
+
+/* ── Insight text ───────────────────────────────────────── */
+.insight-text {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* ── Metric grid ────────────────────────────────────────── */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric-cell {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+}
+
+.metric-cell span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metric-cell strong {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* ── Cost breakdown ─────────────────────────────────────── */
+.cost-breakdown,
+.financial-outlook {
+  display: grid;
+  gap: 6px;
+}
+
+.cost-breakdown h4,
+.financial-outlook h4 {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.cost-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  padding: 5px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+}
+
+.cost-line:last-child {
+  border-bottom: none;
+}
+
+.cost-line span:first-child {
+  color: var(--muted);
+  flex: 1;
+}
+
+.cost-total {
+  padding-top: 7px;
+  font-weight: 600;
+  border-top: 1px solid var(--line) !important;
+  border-bottom: none !important;
+}
+
+.benchmark-note {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.fin-positive {
+  color: #0e6a57;
+  font-weight: 600;
+}
+
+.fin-negative {
+  color: #9b2c2c;
+  font-weight: 600;
+}
+
+.fin-accent {
+  color: var(--accent);
+}
+
+.break-even-row {
+  padding-top: 6px;
+}
+
+/* ── Analysis modal ─────────────────────────────────────── */
+.analysis-modal-card {
+  width: min(980px, 100%);
+  max-height: min(84vh, 820px);
+  display: grid;
+  gap: 14px;
+}
+
+.analysis-tab-bar {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+
+.analysis-tab {
+  padding: 7px 16px;
+  border-radius: 10px 10px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.analysis-tab.active {
+  background: var(--surface-strong);
+  border-color: var(--line);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.analysis-financial-section {
+  display: grid;
+  gap: 14px;
+}
+
+.analysis-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analysis-kpi {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+.analysis-kpi span {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.analysis-kpi strong {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.analysis-kpi small {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.kpi-positive { color: #0e6a57; }
+.kpi-negative { color: #9b2c2c; }
+.kpi-accent   { color: var(--accent); }
+
+.analysis-chart-label {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.analysis-disclaimer {
+  margin: 0;
+  font-size: 0.77rem;
+  color: var(--muted);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* ── Break-even chart ───────────────────────────────────── */
+:root {
+  --profit-color: #0e6a57;
+  --loss-color:   #9b2c2c;
+}
+
+.breakeven-chart-block {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--surface-strong) 90%, transparent);
+}
+
+.breakeven-svg {
+  color: var(--accent);
+}
+
+.breakeven-zero-line {
+  stroke: var(--line);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+}
+
+.breakeven-area-positive {
+  fill: rgba(14, 106, 87, 0.14);
+}
+
+.breakeven-area-negative {
+  fill: rgba(155, 44, 44, 0.14);
+}
+
+.breakeven-area-mixed {
+  fill: rgba(14, 106, 87, 0.10);
+}
+
+.breakeven-line {
+  stroke: var(--accent);
+}
+
+.breakeven-marker-line {
+  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+
+.breakeven-axis-label {
+  font-size: 10px;
+  fill: var(--muted);
+  font-family: inherit;
+}
+
+/* ── Popup redesign ─────────────────────────────────────── */
+.popup-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.popup-header-row h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.popup-score-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border: 1px solid var(--line);
+}
+
+.popup-score-chip.good {
+  color: #0e6a57;
+  background: rgba(106, 208, 173, 0.20);
+  border-color: rgba(106, 208, 173, 0.30);
+}
+
+.popup-score-chip.caution {
+  color: #8a5b12;
+  background: rgba(244, 200, 107, 0.20);
+  border-color: rgba(244, 200, 107, 0.30);
+}
+
+.popup-insight {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.popup-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.popup-metric {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+}
+
+.popup-metric span {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.popup-metric strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.popup-reasoning {
+  margin: 0 0 6px;
+  font-size: 0.81rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.popup-sources {
+  margin: 4px 0 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .analysis-summary-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

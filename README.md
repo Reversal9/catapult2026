@@ -1,6 +1,6 @@
 # Catapult 2026
 
-Renewables Site Scout is a map-first decision-support tool for analyzing a user-selected polygon and recommending subregions for solar panels, wind turbines, and data centers.
+Site Scouter is a map-first decision-support tool for analyzing a user-selected polygon and recommending subregions for solar panels, wind turbines, and data centers.
 
 ## What The App Does
 

@@ -52,7 +52,7 @@ describe("Frontend UI/UX expectations", () => {
       ).not.toBeInTheDocument();
     });
     expect(
-      screen.getByRole("heading", { name: /renewables site scout/i }),
+      screen.getByRole("heading", { name: /site scouter/i }),
     ).toBeInTheDocument();
   });
 

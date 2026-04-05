@@ -5,6 +5,8 @@ import {
   INFRASTRUCTURE_SEGMENTATION_OPTIONS,
   INFRASTRUCTURE_TERRAIN_PROVIDERS,
 } from "../constants/infrastructureOptions";
+import { generateResultInsight } from "../lib/insightText";
+import { computeFinancials, computeCostBreakdown, industryBenchmark, formatUsd } from "../lib/financialProjection";
 
 function ControlPanel({
   collapsed,
@@ -47,6 +49,7 @@ function ControlPanel({
   onRunAnalysis,
   onOpenTrend,
   onOpenReport,
+  onOpenAnalysis,
 }) {
   const INITIAL_FILTERS = { minScore: "", maxCostM: "", minAreaKm2: "", sortBy: "score" };
   const [filters, setFilters] = useState(INITIAL_FILTERS);
@@ -505,7 +508,8 @@ function ControlPanel({
               className="asset-result-card panel-section"
               aria-label="Asset analysis result"
             >
-              <div className="asset-result-header">
+              {/* Header */}
+                            <div className="asset-result-header">
                 <div>
                   <h3>
                     {result.type === "data_center_siting"
@@ -514,6 +518,7 @@ function ControlPanel({
                   </h3>
                   <p>{result.scoreExplanation}</p>
                 </div>
+
                 {result.type === "data_center_siting" ? (
                   <button
                     type="button"
@@ -526,7 +531,14 @@ function ControlPanel({
                   <div
                     className={`score-badge ${result.suitable ? "good" : "caution"}`}
                   >
-                    <span>Score {result.feasibilityScore.toFixed(1)}</span>
+                    <span>
+                      {result.feasibilityScore.toFixed(0)}{" "}
+                      {result.feasibilityScore >= 75
+                        ? "Excellent"
+                        : result.feasibilityScore >= 55
+                          ? "Good"
+                          : "Fair"}
+                    </span>
                     <HelpButton
                       label="Feasibility score"
                       help="This score is a simple fit check from 0 to 100. Higher means the site better matches the main needs for this asset, such as space, weather, and build practicality."
@@ -534,77 +546,130 @@ function ControlPanel({
                   </div>
                 )}
               </div>
+          
 
-              <div className="asset-metrics">
-                <p>Selected area: {result.areaKm2.toFixed(2)} km²</p>
-                {(result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting") && (
-                  <p>
-                    Valid buildable{" "}
-                    {result.type === "solar_siting"
-                      ? "solar"
-                      : result.type === "wind_siting"
-                        ? "wind"
-                        : "data center"}{" "}
-                    area: {result.validAreaKm2.toFixed(2)} km²
-                  </p>
+              {/* Natural language insight */}
+              {(() => {
+                const insight = generateResultInsight(result);
+                return insight ? <p className="insight-text">{insight}</p> : null;
+              })()}
+
+              {/* Key metrics grid */}
+              <div className="metric-grid">
+                <div className="metric-cell">
+                  <span>Selected area</span>
+                  <strong>{result.areaKm2.toFixed(2)} km²</strong>
+                </div>
+                {result.validAreaKm2 > 0 && (
+                  <div className="metric-cell">
+                    <span>Buildable area</span>
+                    <strong>{result.validAreaKm2.toFixed(2)} km²</strong>
+                  </div>
                 )}
-                {result.assetCount !== null &&
-                  result.assetCount !== undefined && (
-                    <p>
-                      Estimated{" "}
-                      {result.type === "solar"
-                        ? "units"
-                        : result.type === "solar_siting"
-                          ? "panels"
-                          : result.type === "wind" || result.type === "wind_siting"
-                            ? "turbines"
-                            : result.type === "data_center_siting"
-                              ? "campuses"
-                              : "campuses"}
-                      : {result.assetCount.toLocaleString()}
-                    </p>
-                  )}
-                {result.installedCapacityKw && (
-                  <p>
-                    Installed capacity:{" "}
-                    {result.installedCapacityKw.toLocaleString()} kW
-                  </p>
+                {result.installedCapacityKw > 0 && (
+                  <div className="metric-cell">
+                    <span>Capacity</span>
+                    <strong>
+                      {result.installedCapacityKw >= 1000
+                        ? `${(result.installedCapacityKw / 1000).toFixed(1)} MW`
+                        : `${Math.round(result.installedCapacityKw).toLocaleString()} kW`}
+                    </strong>
+                  </div>
                 )}
-                {result.annualMWh && (
-                  <p>
-                    Estimated annual generation:{" "}
-                    {result.annualMWh.toLocaleString()} MWh
-                  </p>
+                {result.annualMWh > 0 && (
+                  <div className="metric-cell">
+                    <span>Annual output</span>
+                    <strong>{Math.round(result.annualMWh).toLocaleString()} MWh</strong>
+                  </div>
                 )}
-                <p>
-                  Estimated project cost: ${result.totalCost.toLocaleString()}
-                </p>
-                <p>{result.suitabilityReason}</p>
-                {(result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting") && (
-                  <p>
-                    Sources: {result.dataSources.imagery},{" "}
-                    {result.dataSources.vector_data},{" "}
-                    {result.dataSources.segmentation},{" "}
-                    {result.dataSources.terrain}
-                  </p>
+                {result.assetCount != null && result.assetCount > 0 && (
+                  <div className="metric-cell">
+                    <span>
+                      {result.type === "solar" || result.type === "solar_siting"
+                        ? "Panels"
+                        : result.type === "wind" || result.type === "wind_siting"
+                          ? "Turbines"
+                          : "Subregions"}
+                    </span>
+                    <strong>{Math.round(result.assetCount).toLocaleString()}</strong>
+                  </div>
                 )}
-                {result.trendPeriodStart && result.trendPeriodEnd && (
-                  <p>
-                    Trend period: {result.trendPeriodStart} to{" "}
-                    {result.trendPeriodEnd}
-                  </p>
-                )}
-                {result.dailyGeneration?.length > 0 && (
-                  <p>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={onOpenTrend}
-                    >
-                      Open daily trend graph
-                    </button>
-                  </p>
-                )}
+              </div>
+
+              {/* Cost breakdown */}
+              {(() => {
+                const bd = computeCostBreakdown(result);
+                if (!bd) return null;
+                const benchmark = industryBenchmark(result);
+                return (
+                  <div className="cost-breakdown">
+                    <h4>Cost breakdown</h4>
+                    {bd.items.map((item) => (
+                      <div className="cost-line" key={item.label}>
+                        <span>{item.label}</span>
+                        <span>{formatUsd(item.value)}</span>
+                      </div>
+                    ))}
+                    <div className="cost-line cost-total">
+                      <span>Total project cost</span>
+                      <strong>{formatUsd(bd.total)}</strong>
+                    </div>
+                    {benchmark && <p className="benchmark-note">{benchmark}</p>}
+                  </div>
+                );
+              })()}
+
+              {/* Financial outlook */}
+              {(() => {
+                const fin = computeFinancials(result);
+                if (!fin) return null;
+                const omPct =
+                  result.type === "solar_siting" || result.type === "solar"
+                    ? "1.5"
+                    : result.type === "wind_siting" || result.type === "wind"
+                      ? "2.2"
+                      : "2.8";
+                return (
+                  <div className="financial-outlook">
+                    <h4>Financial outlook</h4>
+                    <div className="cost-line">
+                      <span>Estimated annual revenue</span>
+                      <span className="fin-positive">{formatUsd(fin.annualRevenue)}/yr</span>
+                    </div>
+                    <div className="cost-line">
+                      <span>O&amp;M ({omPct}%/yr)</span>
+                      <span>{formatUsd(fin.annualOM)}/yr</span>
+                    </div>
+                    <div className="cost-line cost-total">
+                      <span>Annual net income</span>
+                      <strong className={fin.annualNet >= 0 ? "fin-positive" : "fin-negative"}>
+                        {fin.annualNet >= 0 ? "+" : ""}
+                        {formatUsd(fin.annualNet)}/yr
+                      </strong>
+                    </div>
+                    {fin.breakEvenYears !== null && (
+                      <div className="cost-line break-even-row">
+                        <span>Payback period</span>
+                        <strong className="fin-accent">
+                          {fin.breakEvenYears <= 20
+                            ? `~${Math.ceil(fin.breakEvenYears)} years`
+                            : ">20 years"}
+                        </strong>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Open analysis button */}
+              <div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={onOpenAnalysis}
+                >
+                  Open financial analysis →
+                </button>
               </div>
             </section>
           )}

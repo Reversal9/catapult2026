@@ -38,7 +38,7 @@ import ControlPanel from "./components/ControlPanel";
 import LandingOverlay from "./components/LandingOverlay";
 import MapScene from "./components/MapScene";
 import TopBar from "./components/TopBar";
-import TrendModal from "./components/TrendModal";
+import AnalysisModal from "./components/AnalysisModal";
 import { ASSET_PRESETS } from "./constants/models";
 import { analyzeInfrastructureRegion } from "./lib/infrastructureAnalysisApi";
 import { mapAssetResult } from "./lib/assetResult";
@@ -228,7 +228,7 @@ function App() {
   const [statsVisible, setStatsVisible] = useState(false);
   const [result, setResult] = useState(null); // Analysis result from backend
   const [selectedCandidateId, setSelectedCandidateId] = useState(null); // For drilling into specific site
-  const [trendOpen, setTrendOpen] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
 
   // === Landing Screen Animation ===
   /**
@@ -461,7 +461,7 @@ function App() {
         });
         setSelectedCandidateId(mappedResult.candidates[0]?.id ?? null);
         setResult(mappedResult);
-        setTrendOpen(false);
+        setAnalysisOpen(false);
       } else if (
         energyType === "solar" ||
         energyType === "wind" ||
@@ -496,7 +496,7 @@ function App() {
               : mapDataCenterSitingResult(infrastructureResult, sitingSettings, { presetName });
         setSelectedCandidateId(mappedResult.candidates[0]?.id ?? null);
         setResult(mappedResult);
-        setTrendOpen(false);
+        setAnalysisOpen(false);
       } else {
         const assetResult = await analyzeAssetRegion(region, {
           assetType: energyType,
@@ -519,7 +519,7 @@ function App() {
                 : "Custom specification",
           }),
         );
-        setTrendOpen(false);
+        setAnalysisOpen(false);
       }
 
       setStatsVisible(true);
@@ -711,11 +711,12 @@ function App() {
           onRunAnalysis={runAnalysis}
           onOpenTrend={() => setTrendOpen(true)}
           onOpenReport={openDataCenterReport}
+          onOpenAnalysis={() => setAnalysisOpen(true)}
         />
 
-        <TrendModal
-          open={trendOpen}
-          onClose={() => setTrendOpen(false)}
+        <AnalysisModal
+          open={analysisOpen}
+          onClose={() => setAnalysisOpen(false)}
           result={result?.type !== "infrastructure" ? result : null}
         />
       </div>

@@ -1,6 +1,6 @@
 # Frontend
 
-Map-first React + Vite frontend for Renewables Site Scout.
+Map-first React + Vite frontend for Site Scouter.
 
 ## What Users Can Do
 

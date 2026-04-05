@@ -11,6 +11,8 @@ import {
 import MapEvents from "./MapEvents";
 import { markerIcon } from "../map/icons";
 import { rectangleFromTwoPoints } from "../utils/geo";
+import { generateCandidateInsight } from "../lib/insightText";
+import { formatUsd } from "../lib/financialProjection";
 
 const CANDIDATE_COLORS = {
   solar: {
@@ -253,79 +255,63 @@ function MapScene({
             {(result.type === "infrastructure" || result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting") &&
             selectedCandidate ? (
               <div className="result-popup">
-                <h3>{selectedCandidate.useLabel} Candidate</h3>
-                <p>
-                  Feasibility score:{" "}
-                  {selectedCandidate.feasibilityScore.toFixed(1)}
-                </p>
-                <p>
-                  Buildable footprint: {(selectedCandidate.areaKm2 * 100).toFixed(2)} ha
-                </p>
-                <p>
-                  Estimated cost: $
-                  {selectedCandidate.estimatedInstallationCostUsd.toLocaleString()}
-                </p>
-                {selectedCandidate.metadata?.panel_count ? (
-                  <p>
-                    Packed panels:{" "}
-                    {selectedCandidate.metadata.panel_count.toLocaleString()}
-                  </p>
-                ) : null}
-                {selectedCandidate.metadata?.packed_usable_area_m2 ? (
-                  <p>
-                    Packed panel area:{" "}
-                    {selectedCandidate.metadata.packed_usable_area_m2.toLocaleString()} m²
-                  </p>
-                ) : null}
-                {selectedCandidate.metadata?.panel_length_m &&
-                selectedCandidate.metadata?.panel_width_m ? (
-                  <p>
-                    Panel size: {selectedCandidate.metadata.panel_length_m} m x{" "}
-                    {selectedCandidate.metadata.panel_width_m} m
-                  </p>
-                ) : null}
-                {selectedCandidate.metadata?.display_panel_count &&
-                selectedCandidate.metadata?.display_panel_count <
-                  selectedCandidate.metadata?.panel_count ? (
-                  <p>
-                    Displayed on map:{" "}
-                    {selectedCandidate.metadata.display_panel_count.toLocaleString()}{" "}
-                    sample placements
-                  </p>
-                ) : null}
-                {selectedCandidate.metadata?.turbine_count ? (
-                  <p>
-                    Turbines fitted:{" "}
-                    {selectedCandidate.metadata.turbine_count.toLocaleString()}
-                  </p>
-                ) : null}
-                {selectedCandidate.metadata?.installed_capacity_kw ? (
-                  <p>
-                    Installed capacity:{" "}
-                    {selectedCandidate.metadata.installed_capacity_kw.toLocaleString()}{" "}
-                    kW
-                  </p>
-                ) : null}
-                {selectedCandidate.estimatedAnnualOutputKwh && (
-                  <p>
-                    Estimated output:{" "}
-                    {(
-                      selectedCandidate.estimatedAnnualOutputKwh / 1000
-                    ).toLocaleString()}{" "}
-                    MWh/year
+                <div className="popup-header-row">
+                  <h3>{selectedCandidate.useLabel}</h3>
+                  <span className={`popup-score-chip ${selectedCandidate.feasibilityScore >= 70 ? "good" : "caution"}`}>
+                    {selectedCandidate.feasibilityScore.toFixed(0)}
+                  </span>
+                </div>
+                <p className="popup-insight">{generateCandidateInsight(selectedCandidate)}</p>
+                <div className="popup-metric-grid">
+                  <div className="popup-metric">
+                    <span>Area</span>
+                    <strong>{(selectedCandidate.areaKm2 * 100).toFixed(1)} ha</strong>
+                  </div>
+                  <div className="popup-metric">
+                    <span>Score</span>
+                    <strong>{selectedCandidate.feasibilityScore.toFixed(1)}</strong>
+                  </div>
+                  {selectedCandidate.estimatedAnnualOutputKwh > 0 && (
+                    <div className="popup-metric">
+                      <span>Annual output</span>
+                      <strong>{Math.round(selectedCandidate.estimatedAnnualOutputKwh / 1000).toLocaleString()} MWh</strong>
+                    </div>
+                  )}
+                  {selectedCandidate.estimatedInstallationCostUsd > 0 && (
+                    <div className="popup-metric">
+                      <span>Est. cost</span>
+                      <strong>{formatUsd(selectedCandidate.estimatedInstallationCostUsd)}</strong>
+                    </div>
+                  )}
+                  {selectedCandidate.metadata?.panel_count > 0 && (
+                    <div className="popup-metric">
+                      <span>Panels</span>
+                      <strong>{Math.round(selectedCandidate.metadata.panel_count).toLocaleString()}</strong>
+                    </div>
+                  )}
+                  {selectedCandidate.metadata?.turbine_count > 0 && (
+                    <div className="popup-metric">
+                      <span>Turbines</span>
+                      <strong>{selectedCandidate.metadata.turbine_count}</strong>
+                    </div>
+                  )}
+                  {selectedCandidate.metadata?.installed_capacity_kw > 0 && (
+                    <div className="popup-metric">
+                      <span>Capacity</span>
+                      <strong>
+                        {selectedCandidate.metadata.installed_capacity_kw >= 1000
+                          ? `${(selectedCandidate.metadata.installed_capacity_kw / 1000).toFixed(1)} MW`
+                          : `${Math.round(selectedCandidate.metadata.installed_capacity_kw).toLocaleString()} kW`}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+                <p className="popup-reasoning">{selectedCandidate.reasoning?.[0]}</p>
+                {result.dataSources && (
+                  <p className="popup-sources">
+                    Sources: {result.dataSources.imagery}, {result.dataSources.terrain}
                   </p>
                 )}
-                <p>{selectedCandidate.reasoning[0]}</p>
-                <p>{selectedCandidate.reasoning[1]}</p>
-                {selectedCandidate.reasoning[2] ? (
-                  <p>{selectedCandidate.reasoning[2]}</p>
-                ) : null}
-                <p>
-                  Sources: {result.dataSources.imagery},{" "}
-                  {result.dataSources.vector_data},{" "}
-                  {result.dataSources.segmentation},{" "}
-                  {result.dataSources.terrain}
-                </p>
               </div>
             ) : result.type === "infrastructure" || result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting" ? (
               <div className="result-popup">

@@ -1,4 +1,5 @@
 import React from "react";
+import heroLogo from "../assets/logo.png";
 
 function LandingOverlay({ landingState, onEnter }) {
   if (landingState === "hidden") return null;
@@ -11,8 +12,12 @@ function LandingOverlay({ landingState, onEnter }) {
       onClick={onEnter}
     >
       <div className="landing-card">
-        <p className="kicker">Catapult 2026</p>
-        <h2>Renewables Site Scout</h2>
+        <img
+          src={heroLogo}
+          alt="Catapult 2026 logo"
+          className="landing-logo"
+        />
+        <h2>Site Scouter</h2>
         <p>
           Plan solar, wind, and digital-infrastructure sites with precise
           map-based region selection and fast feasibility estimates.

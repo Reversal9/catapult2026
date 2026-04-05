@@ -257,7 +257,7 @@ function ControlPanel({
               </section>
             )}
 
-          {(energyType === "infrastructure" || energyType === "solar") && (
+          {(energyType === "infrastructure" || energyType === "solar" || energyType === "wind" || energyType === "data_center") && (
             <section className="panel-section">
               <div className="panel-section-header">
                 <h3>Data Sources</h3>
@@ -338,7 +338,7 @@ function ControlPanel({
             </button>
           </div>
 
-          {(result?.type === "infrastructure" || result?.type === "solar_siting") && (
+          {(result?.type === "infrastructure" || result?.type === "solar_siting" || result?.type === "wind_siting" || result?.type === "data_center_siting") && (
             <section
               className="candidate-results panel-section"
               aria-label="Infrastructure candidates"
@@ -346,12 +346,22 @@ function ControlPanel({
               <div className="candidate-summary">
                 <div>
                   <strong>{result.candidateCount}</strong>{" "}
-                  {result.type === "solar_siting" ? "valid solar subregions" : "ranked candidates"}
+                  {result.type === "solar_siting"
+                    ? "valid solar subregions"
+                    : result.type === "wind_siting"
+                      ? "valid wind subregions"
+                      : result.type === "data_center_siting"
+                        ? "valid data center subregions"
+                        : "ranked candidates"}
                 </div>
                 <div>
                   {result.type === "solar_siting"
                     ? "These highlighted subregions passed imagery, vector, and terrain screening and were then packed with the selected solar preset."
-                    : "Each dashed outline is a buildable subregion. The shapes inside show where the selected equipment can fit."}
+                    : result.type === "wind_siting"
+                      ? "These highlighted subregions passed imagery, vector, and terrain screening for wind turbine placement."
+                      : result.type === "data_center_siting"
+                        ? "These highlighted subregions passed terrain and access screening for data center siting."
+                        : "Each dashed outline is a buildable subregion. The shapes inside show where the selected equipment can fit."}
                 </div>
                 <div>
                   Sources: {result.dataSources.imagery},{" "}
@@ -404,8 +414,16 @@ function ControlPanel({
 
               <div className="asset-metrics">
                 <p>Selected area: {result.areaKm2.toFixed(2)} km²</p>
-                {result.type === "solar_siting" && (
-                  <p>Valid buildable solar area: {result.validAreaKm2.toFixed(2)} km²</p>
+                {(result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting") && (
+                  <p>
+                    Valid buildable{" "}
+                    {result.type === "solar_siting"
+                      ? "solar"
+                      : result.type === "wind_siting"
+                        ? "wind"
+                        : "data center"}{" "}
+                    area: {result.validAreaKm2.toFixed(2)} km²
+                  </p>
                 )}
                 {result.assetCount !== null &&
                   result.assetCount !== undefined && (
@@ -415,9 +433,11 @@ function ControlPanel({
                         ? "units"
                         : result.type === "solar_siting"
                           ? "panels"
-                        : result.type === "wind"
-                          ? "turbines"
-                          : "campuses"}
+                          : result.type === "wind" || result.type === "wind_siting"
+                            ? "turbines"
+                            : result.type === "data_center_siting"
+                              ? "campuses"
+                              : "campuses"}
                       : {result.assetCount.toLocaleString()}
                     </p>
                   )}
@@ -437,7 +457,7 @@ function ControlPanel({
                   Estimated project cost: ${result.totalCost.toLocaleString()}
                 </p>
                 <p>{result.suitabilityReason}</p>
-                {result.type === "solar_siting" && (
+                {(result.type === "solar_siting" || result.type === "wind_siting" || result.type === "data_center_siting") && (
                   <p>
                     Sources: {result.dataSources.imagery},{" "}
                     {result.dataSources.vector_data},{" "}

@@ -43,8 +43,10 @@ import { ASSET_PRESETS } from "./constants/models";
 import { analyzeInfrastructureRegion } from "./lib/infrastructureAnalysisApi";
 import { mapAssetResult } from "./lib/assetResult";
 import {
+  mapDataCenterSitingResult,
   mapInfrastructureResult,
   mapSolarSitingResult,
+  mapWindSitingResult,
 } from "./lib/infrastructureResult";
 import {
   clamp,
@@ -386,7 +388,11 @@ function App() {
         setSelectedCandidateId(mappedResult.candidates[0]?.id ?? null);
         setResult(mappedResult);
         setTrendOpen(false);
-      } else if (energyType === "solar") {
+      } else if (
+        energyType === "solar" ||
+        energyType === "wind" ||
+        energyType === "data_center"
+      ) {
         const infrastructureResult = await analyzeInfrastructureRegion(region, {
           imagery_provider: imageryProvider,
           segmentation_backend: segmentationBackend,
@@ -395,23 +401,25 @@ function App() {
           solar_spec: solarSpec,
           wind_spec: windSpec,
           data_center_spec: dataCenterSpec,
-          allowed_use_types: ["solar"],
+          allowed_use_types: [energyType],
         });
         const presetName =
           modelMode === "predefined"
             ? (assetPresets.find((preset) => preset.id === selectedModel)?.label ??
                 null)
             : "Custom specification";
-        const mappedResult = mapSolarSitingResult(
-          infrastructureResult,
-          {
-            imageryProvider,
-            segmentationBackend,
-            terrainProvider,
-            cellSizeMeters: autoCellSizeMeters,
-          },
-          { presetName },
-        );
+        const sitingSettings = {
+          imageryProvider,
+          segmentationBackend,
+          terrainProvider,
+          cellSizeMeters: autoCellSizeMeters,
+        };
+        const mappedResult =
+          energyType === "solar"
+            ? mapSolarSitingResult(infrastructureResult, sitingSettings, { presetName })
+            : energyType === "wind"
+              ? mapWindSitingResult(infrastructureResult, sitingSettings, { presetName })
+              : mapDataCenterSitingResult(infrastructureResult, sitingSettings, { presetName });
         setSelectedCandidateId(mappedResult.candidates[0]?.id ?? null);
         setResult(mappedResult);
         setTrendOpen(false);

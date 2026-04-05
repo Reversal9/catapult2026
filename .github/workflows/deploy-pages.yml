@@ -40,6 +40,7 @@ jobs:
       - name: Run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
         run: |
           npm run build
 

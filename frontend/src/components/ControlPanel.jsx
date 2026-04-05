@@ -47,12 +47,9 @@ function ControlPanel({
   selectedCandidateId,
   onSelectCandidate,
   onRunAnalysis,
-<<<<<<< Updated upstream
   onOpenTrend,
   onOpenReport,
-=======
   onOpenAnalysis,
->>>>>>> Stashed changes
 }) {
   const INITIAL_FILTERS = { minScore: "", maxCostM: "", minAreaKm2: "", sortBy: "score" };
   const [filters, setFilters] = useState(INITIAL_FILTERS);
@@ -512,9 +509,8 @@ function ControlPanel({
               aria-label="Asset analysis result"
             >
               {/* Header */}
-              <div className="asset-result-header">
+                            <div className="asset-result-header">
                 <div>
-<<<<<<< Updated upstream
                   <h3>
                     {result.type === "data_center_siting"
                       ? result.label
@@ -522,6 +518,7 @@ function ControlPanel({
                   </h3>
                   <p>{result.scoreExplanation}</p>
                 </div>
+
                 {result.type === "data_center_siting" ? (
                   <button
                     type="button"
@@ -534,28 +531,22 @@ function ControlPanel({
                   <div
                     className={`score-badge ${result.suitable ? "good" : "caution"}`}
                   >
-                    <span>Score {result.feasibilityScore.toFixed(1)}</span>
+                    <span>
+                      {result.feasibilityScore.toFixed(0)}{" "}
+                      {result.feasibilityScore >= 75
+                        ? "Excellent"
+                        : result.feasibilityScore >= 55
+                          ? "Good"
+                          : "Fair"}
+                    </span>
                     <HelpButton
                       label="Feasibility score"
                       help="This score is a simple fit check from 0 to 100. Higher means the site better matches the main needs for this asset, such as space, weather, and build practicality."
                     />
                   </div>
                 )}
-=======
-                  <h3>{result.label}</h3>
-                </div>
-                <div className={`score-badge ${result.suitable ? "good" : "caution"}`}>
-                  <span>
-                    {result.feasibilityScore.toFixed(0)}{" "}
-                    {result.feasibilityScore >= 75
-                      ? "Excellent"
-                      : result.feasibilityScore >= 55
-                        ? "Good"
-                        : "Fair"}
-                  </span>
-                </div>
->>>>>>> Stashed changes
               </div>
+          
 
               {/* Natural language insight */}
               {(() => {

@@ -709,12 +709,9 @@ function App() {
             setStatsVisible(true);
           }}
           onRunAnalysis={runAnalysis}
-<<<<<<< Updated upstream
           onOpenTrend={() => setTrendOpen(true)}
           onOpenReport={openDataCenterReport}
-=======
           onOpenAnalysis={() => setAnalysisOpen(true)}
->>>>>>> Stashed changes
         />
 
         <AnalysisModal

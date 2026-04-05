@@ -91,6 +91,80 @@ const candidatePopupAnchor = (candidate) => {
   ];
 };
 
+const formatReportCurrency = (value) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value ?? 0);
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const buildDataCenterReportHtml = (result) => {
+  const candidateMarkup = (result.candidates ?? [])
+    .slice(0, 10)
+    .map(
+      (candidate, index) => `
+        <section class="candidate">
+          <h2>Candidate ${index + 1}: ${escapeHtml(candidate.useLabel)}</h2>
+          <p><strong>Feasibility score:</strong> ${candidate.feasibilityScore.toFixed(1)}</p>
+          <p><strong>Buildable area:</strong> ${(candidate.areaKm2 * 100).toFixed(2)} ha</p>
+          <p><strong>Estimated cost:</strong> ${formatReportCurrency(candidate.estimatedInstallationCostUsd)}</p>
+          <p><strong>Installed capacity:</strong> ${(candidate.metadata?.installed_capacity_kw ?? 0).toLocaleString()} kW</p>
+          ${
+            candidate.reasoning?.length
+              ? `<ul>${candidate.reasoning
+                  .filter(Boolean)
+                  .map((item) => `<li>${escapeHtml(item)}</li>`)
+                  .join("")}</ul>`
+              : ""
+          }
+        </section>
+      `,
+    )
+    .join("");
+
+  return `<!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <title>Data Center Siting Report</title>
+      <style>
+        body { font-family: "SF Pro Text", "Segoe UI", sans-serif; margin: 32px; color: #17202a; }
+        h1, h2 { margin: 0 0 12px; }
+        p { margin: 0 0 10px; line-height: 1.45; }
+        .summary, .candidate { border: 1px solid #d7dde6; border-radius: 14px; padding: 18px; margin-top: 18px; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }
+        ul { margin: 10px 0 0 20px; }
+        .muted { color: #576676; }
+      </style>
+    </head>
+    <body>
+      <h1>Data Center Siting Report</h1>
+      <p class="muted">${escapeHtml(result.scoreExplanation)}</p>
+      <section class="summary">
+        <div class="grid">
+          <p><strong>Total area:</strong> ${result.areaKm2.toFixed(2)} km²</p>
+          <p><strong>Valid area:</strong> ${result.validAreaKm2.toFixed(2)} km²</p>
+          <p><strong>Candidate count:</strong> ${(result.candidateCount ?? 0).toLocaleString()}</p>
+          <p><strong>Feasibility score:</strong> ${result.feasibilityScore.toFixed(1)}</p>
+          <p><strong>Installed capacity:</strong> ${(result.installedCapacityKw ?? 0).toLocaleString()} kW</p>
+          <p><strong>Estimated cost:</strong> ${formatReportCurrency(result.totalCost)}</p>
+        </div>
+        <p><strong>Assessment:</strong> ${escapeHtml(result.suitabilityReason)}</p>
+        <p><strong>Sources:</strong> ${escapeHtml(result.dataSources.imagery)}, ${escapeHtml(result.dataSources.vector_data)}, ${escapeHtml(result.dataSources.segmentation)}, ${escapeHtml(result.dataSources.terrain)}</p>
+      </section>
+      ${candidateMarkup || '<section class="candidate"><p>No valid candidates were returned for this run.</p></section>'}
+    </body>
+  </html>`;
+};
+
 function App() {
   const mapRef = useRef(null);
   const popupRef = useRef(null);
@@ -479,6 +553,20 @@ function App() {
     return [c.lat, c.lng];
   }, [activeInfrastructureCandidate, region]);
 
+  const openDataCenterReport = useCallback(() => {
+    if (result?.type !== "data_center_siting") return;
+
+    const reportWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!reportWindow) {
+      setSubmitError("Allow pop-ups to open the data center report.");
+      return;
+    }
+
+    reportWindow.document.open();
+    reportWindow.document.write(buildDataCenterReportHtml(result));
+    reportWindow.document.close();
+  }, [result]);
+
   useEffect(() => {
     if (!mapRef.current) return;
     if (searching || statsVisible || userMovedMap) return;
@@ -622,6 +710,7 @@ function App() {
           }}
           onRunAnalysis={runAnalysis}
           onOpenTrend={() => setTrendOpen(true)}
+          onOpenReport={openDataCenterReport}
         />
 
         <TrendModal

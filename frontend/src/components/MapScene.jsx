@@ -77,11 +77,8 @@ function MapScene({
       : "&copy; OpenStreetMap contributors &copy; CARTO";
   const candidatesToRender = useMemo(() => {
     if (!result?.candidates) return [];
-    if (result.type === "solar_siting") {
-      return selectedCandidate ? [selectedCandidate] : result.candidates.slice(0, 1);
-    }
     return result.candidates;
-  }, [result, selectedCandidate]);
+  }, [result]);
 
   return (
     <div className="map-layer" aria-hidden={!landingHidden}>

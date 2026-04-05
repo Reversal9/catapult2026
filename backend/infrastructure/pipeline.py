@@ -87,8 +87,16 @@ def _merge_solar_candidates(
             current_index = stack.pop()
             cluster_indices.append(current_index)
             current_bbox = candidate_bboxes[current_index]
+            current_source = str(
+                candidates[current_index].metadata.get("validity_source", "")
+            )
             for next_index in range(len(candidates)):
                 if visited[next_index]:
+                    continue
+                next_source = str(candidates[next_index].metadata.get("validity_source", ""))
+                if current_source != next_source:
+                    continue
+                if current_source == "rooftop_buildings":
                     continue
                 if _bbox_gap_m(current_bbox, candidate_bboxes[next_index]) > adjacency_gap_m:
                     continue
@@ -96,6 +104,9 @@ def _merge_solar_candidates(
                 stack.append(next_index)
 
         cluster_candidates = [candidates[index] for index in cluster_indices]
+        if len(cluster_candidates) == 1:
+            merged.append(cluster_candidates[0])
+            continue
         valid_region_polygons = [
             polygon
             for cluster_candidate in cluster_candidates
@@ -108,6 +119,11 @@ def _merge_solar_candidates(
             polygon
             for cluster_candidate in cluster_candidates
             for polygon in _flatten_polygons(cluster_candidate, "packing_block_polygons")
+        ]
+        placement_polygons = [
+            polygon
+            for cluster_candidate in cluster_candidates
+            for polygon in _flatten_polygons(cluster_candidate, "placement_polygons")
         ]
         cluster_area_m2 = sum(cluster_candidate.area_m2 for cluster_candidate in cluster_candidates)
         weighted_score = (
@@ -132,6 +148,10 @@ def _merge_solar_candidates(
         )
         packed_usable_area_m2 = sum(
             float(cluster_candidate.metadata.get("packed_usable_area_m2", 0.0))
+            for cluster_candidate in cluster_candidates
+        )
+        display_panel_count = sum(
+            int(cluster_candidate.metadata.get("display_panel_count", 0))
             for cluster_candidate in cluster_candidates
         )
         model_sources = sorted(
@@ -180,6 +200,7 @@ def _merge_solar_candidates(
                     "installed_capacity_kw": round(installed_capacity_kw, 2),
                     "usable_solar_area_m2": round(cluster_area_m2, 2),
                     "packed_usable_area_m2": round(packed_usable_area_m2, 2),
+                    "display_panel_count": display_panel_count,
                     "valid_region_polygons": [
                         [point.model_dump() for point in polygon]
                         for polygon in valid_region_polygons
@@ -188,6 +209,11 @@ def _merge_solar_candidates(
                         [point.model_dump() for point in polygon]
                         for polygon in packing_block_polygons
                     ],
+                    "placement_polygons": [
+                        [point.model_dump() for point in polygon]
+                        for polygon in placement_polygons
+                    ],
+                    "validity_source": str(candidate.metadata.get("validity_source", "merged_open_land")),
                 },
             )
         )
@@ -266,12 +292,26 @@ def analyze_infrastructure_polygon(
             elif solar_rejection_reason in solar_rejections:
                 solar_rejections[solar_rejection_reason] += 1
         if "wind" in allowed_use_types:
-            candidate = wind_candidate(cell, index)
+            candidate = wind_candidate(
+                cell,
+                index,
+                request.wind_spec,
+                imagery_raster,
+                buildings,
+                roads,
+            )
             if candidate is not None:
                 candidates.append(candidate)
                 pretrim_candidate_counts["wind"] += 1
         if "data_center" in allowed_use_types:
-            candidate = data_center_candidate(cell, index)
+            candidate = data_center_candidate(
+                cell,
+                index,
+                request.data_center_spec,
+                imagery_raster,
+                buildings,
+                roads,
+            )
             if candidate is not None:
                 candidates.append(candidate)
                 pretrim_candidate_counts["data_center"] += 1
@@ -336,6 +376,17 @@ def analyze_infrastructure_polygon(
                 "packing_efficiency": request.solar_spec.packing_efficiency,
                 "performance_ratio": request.solar_spec.performance_ratio,
                 "sunlight_threshold_kwh_m2_yr": request.solar_spec.sunlight_threshold_kwh_m2_yr,
+            },
+            "wind_spec": {
+                "turbine_rating_kw": request.wind_spec.turbine_rating_kw,
+                "turbine_cost_usd": request.wind_spec.turbine_cost_usd,
+                "spacing_area_m2": request.wind_spec.spacing_area_m2,
+                "minimum_viable_wind_speed_mps": request.wind_spec.minimum_viable_wind_speed_mps,
+            },
+            "data_center_spec": {
+                "power_density_kw_per_m2": request.data_center_spec.power_density_kw_per_m2,
+                "construction_cost_per_m2_usd": request.data_center_spec.construction_cost_per_m2_usd,
+                "fit_out_cost_per_kw_usd": request.data_center_spec.fit_out_cost_per_kw_usd,
             },
         },
         "bbox": {

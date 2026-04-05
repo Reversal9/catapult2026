@@ -15,6 +15,9 @@ export const mapInfrastructureResult = (payload, settings) => {
     const packingBlockPolygons = (
       candidate.metadata?.packing_block_polygons ?? []
     ).map((poly) => poly.map((point) => [point.lat, point.lon]));
+    const placementPolygons = (
+      candidate.metadata?.placement_polygons ?? []
+    ).map((poly) => poly.map((point) => [point.lat, point.lon]));
     return {
       id: candidate.id,
       useType: candidate.use_type,
@@ -22,6 +25,7 @@ export const mapInfrastructureResult = (payload, settings) => {
       polygon,
       validRegionPolygons,
       packingBlockPolygons,
+      placementPolygons,
       center: regionCenter({ type: "polygon", points: polygon }),
       areaKm2: candidate.area_m2 / 1_000_000,
       feasibilityScore: candidate.feasibility_score,
@@ -56,6 +60,9 @@ export const mapSolarSitingResult = (payload, settings, config) => {
     const packingBlockPolygons = (
       candidate.metadata?.packing_block_polygons ?? []
     ).map((poly) => poly.map((point) => [point.lat, point.lon]));
+    const placementPolygons = (
+      candidate.metadata?.placement_polygons ?? []
+    ).map((poly) => poly.map((point) => [point.lat, point.lon]));
     return {
       id: candidate.id,
       useType: candidate.use_type,
@@ -63,6 +70,7 @@ export const mapSolarSitingResult = (payload, settings, config) => {
       polygon,
       validRegionPolygons,
       packingBlockPolygons,
+      placementPolygons,
       center: regionCenter({ type: "polygon", points: polygon }),
       areaKm2: candidate.area_m2 / 1_000_000,
       feasibilityScore: candidate.feasibility_score,

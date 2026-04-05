@@ -51,10 +51,43 @@ import {
   haversineMeters,
   normLng,
   rectangleFromTwoPoints,
+  regionAreaKm2,
   regionCenter,
 } from "./utils/geo";
 import { formatDmsPair, parseDmsPair } from "./utils/dms";
 import { defaultSpec, specFieldsFor } from "./utils/assetSpecs";
+
+const candidatePolygons = (candidate) =>
+  candidate?.validRegionPolygons?.length
+    ? candidate.validRegionPolygons
+    : candidate?.polygon
+      ? [candidate.polygon]
+      : [];
+
+const candidateBounds = (candidate) => {
+  const polygons = candidatePolygons(candidate);
+  if (!polygons.length) return null;
+  const points = polygons.flat();
+  return [
+    [
+      Math.min(...points.map(([lat]) => lat)),
+      Math.min(...points.map(([, lng]) => lng)),
+    ],
+    [
+      Math.max(...points.map(([lat]) => lat)),
+      Math.max(...points.map(([, lng]) => lng)),
+    ],
+  ];
+};
+
+const candidatePopupAnchor = (candidate) => {
+  const bounds = candidateBounds(candidate);
+  if (!bounds) return null;
+  return [
+    bounds[1][0],
+    (bounds[0][1] + bounds[1][1]) / 2,
+  ];
+};
 
 function App() {
   const mapRef = useRef(null);
@@ -105,7 +138,6 @@ function App() {
   const [imageryProvider, setImageryProvider] = useState("usgs");
   const [segmentationBackend, setSegmentationBackend] = useState("auto");
   const [terrainProvider, setTerrainProvider] = useState("opentopodata");
-  const [cellSizeMeters, setCellSizeMeters] = useState(300);
   
   // Solar/wind/data-center specifications (for custom analysis)
   const [solarSpec, setSolarSpec] = useState(defaultSpec("solar"));
@@ -306,6 +338,15 @@ function App() {
     (region.type !== "circle" || region.radiusMeters > 1) &&
     (region.type !== "polygon" || region.points.length >= 3);
 
+  const autoCellSizeMeters = useMemo(() => {
+    const areaKm2 = regionAreaKm2(region);
+    if (areaKm2 <= 0.2) return 100;
+    if (areaKm2 <= 1.0) return 120;
+    if (areaKm2 <= 4.0) return 160;
+    if (areaKm2 <= 15.0) return 220;
+    return 300;
+  }, [region]);
+
   const runAnalysis = async () => {
     const errors = [];
     if (p1Error || p2Error) errors.push("Fix coordinate formatting first.");
@@ -330,15 +371,17 @@ function App() {
           imagery_provider: imageryProvider,
           segmentation_backend: segmentationBackend,
           terrain_provider: terrainProvider,
-          cell_size_m: cellSizeMeters,
+          cell_size_m: autoCellSizeMeters,
           solar_spec: solarSpec,
+          wind_spec: windSpec,
+          data_center_spec: dataCenterSpec,
           allowed_use_types: ["solar", "wind", "data_center"],
         });
         const mappedResult = mapInfrastructureResult(infrastructureResult, {
           imageryProvider,
           segmentationBackend,
           terrainProvider,
-          cellSizeMeters,
+          cellSizeMeters: autoCellSizeMeters,
         });
         setSelectedCandidateId(mappedResult.candidates[0]?.id ?? null);
         setResult(mappedResult);
@@ -348,8 +391,10 @@ function App() {
           imagery_provider: imageryProvider,
           segmentation_backend: segmentationBackend,
           terrain_provider: terrainProvider,
-          cell_size_m: cellSizeMeters,
+          cell_size_m: autoCellSizeMeters,
           solar_spec: solarSpec,
+          wind_spec: windSpec,
+          data_center_spec: dataCenterSpec,
           allowed_use_types: ["solar"],
         });
         const presetName =
@@ -363,7 +408,7 @@ function App() {
             imageryProvider,
             segmentationBackend,
             terrainProvider,
-            cellSizeMeters,
+            cellSizeMeters: autoCellSizeMeters,
           },
           { presetName },
         );
@@ -420,10 +465,7 @@ function App() {
 
   const popupPosition = useMemo(() => {
     if (activeInfrastructureCandidate) {
-      return [
-        activeInfrastructureCandidate.center.lat,
-        activeInfrastructureCandidate.center.lng,
-      ];
+      return candidatePopupAnchor(activeInfrastructureCandidate);
     }
     const c = regionCenter(region);
     return [c.lat, c.lng];
@@ -434,6 +476,20 @@ function App() {
     if (searching || statsVisible || userMovedMap) return;
     fitRegion(0);
   }, [fitRegion, searching, statsVisible, userMovedMap]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !statsVisible || !activeInfrastructureCandidate) return;
+    const bounds = candidateBounds(activeInfrastructureCandidate);
+    if (!bounds) return;
+    map.fitBounds(bounds, {
+      paddingTopLeft: [48, 240],
+      paddingBottomRight: [48, 72],
+      maxZoom: 19,
+      animate: true,
+      duration: 0.45,
+    });
+  }, [activeInfrastructureCandidate, statsVisible]);
 
   return (
     <main className={`app-root theme-${theme}`}>
@@ -509,7 +565,6 @@ function App() {
           imageryProvider={imageryProvider}
           segmentationBackend={segmentationBackend}
           terrainProvider={terrainProvider}
-          cellSizeMeters={cellSizeMeters}
           onEnergyTypeChange={(nextType) => {
             setEnergyType(nextType);
             setSelectedModel(ASSET_PRESETS[nextType]?.[0]?.id ?? "");
@@ -548,14 +603,6 @@ function App() {
           onImageryProviderChange={setImageryProvider}
           onSegmentationBackendChange={setSegmentationBackend}
           onTerrainProviderChange={setTerrainProvider}
-          onCellSizeMetersChange={(value) => {
-            const numeric = Number(value);
-            if (Number.isNaN(numeric)) {
-              setCellSizeMeters(300);
-              return;
-            }
-            setCellSizeMeters(clamp(Math.round(numeric), 100, 2000));
-          }}
           submitError={submitError}
           isReady={isReady}
           searching={searching}

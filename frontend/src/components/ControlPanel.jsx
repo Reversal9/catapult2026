@@ -31,7 +31,6 @@ function ControlPanel({
   imageryProvider,
   segmentationBackend,
   terrainProvider,
-  cellSizeMeters,
   onEnergyTypeChange,
   onModelModeChange,
   onSelectedModelChange,
@@ -39,7 +38,6 @@ function ControlPanel({
   onImageryProviderChange,
   onSegmentationBackendChange,
   onTerrainProviderChange,
-  onCellSizeMetersChange,
   submitError,
   isReady,
   searching,
@@ -78,37 +76,47 @@ function ControlPanel({
 
       {!collapsed && (
         <>
-          <div className="coords-row">
-            <label>
-              <HelpButton
-                label="Point 1"
-                help="First corner of the quick rectangle. You can type coordinates or click the map after selecting the field."
-              />
-              <input
-                value={p1Text}
-                onChange={(event) => onCoordChange("p1", event.target.value)}
-                onFocus={() => onCoordFocus("p1")}
-                placeholder={"43°43'25.7\"N 80°11'38.5\"W"}
-              />
-              {p1Error && <small className="field-error">{p1Error}</small>}
-            </label>
+          <section className="panel-section">
+            <div className="panel-section-header">
+              <h3>Region</h3>
+              <p>Define the area you want the backend to analyze.</p>
+            </div>
+            <div className="coords-row">
+              <label>
+                <HelpButton
+                  label="Point 1"
+                  help="First corner of the quick rectangle. You can type coordinates or click the map after selecting the field."
+                />
+                <input
+                  value={p1Text}
+                  onChange={(event) => onCoordChange("p1", event.target.value)}
+                  onFocus={() => onCoordFocus("p1")}
+                  placeholder={"43°43'25.7\"N 80°11'38.5\"W"}
+                />
+                {p1Error && <small className="field-error">{p1Error}</small>}
+              </label>
 
-            <label>
-              <HelpButton
-                label="Point 2"
-                help="Second corner of the quick rectangle. Together with Point 1, this defines the default selection box."
-              />
-              <input
-                value={p2Text}
-                onChange={(event) => onCoordChange("p2", event.target.value)}
-                onFocus={() => onCoordFocus("p2")}
-                placeholder={"43°43'25.7\"N 80°11'38.5\"W"}
-              />
-              {p2Error && <small className="field-error">{p2Error}</small>}
-            </label>
-          </div>
+              <label>
+                <HelpButton
+                  label="Point 2"
+                  help="Second corner of the quick rectangle. Together with Point 1, this defines the default selection box."
+                />
+                <input
+                  value={p2Text}
+                  onChange={(event) => onCoordChange("p2", event.target.value)}
+                  onFocus={() => onCoordFocus("p2")}
+                  placeholder={"43°43'25.7\"N 80°11'38.5\"W"}
+                />
+                {p2Error && <small className="field-error">{p2Error}</small>}
+              </label>
+            </div>
+          </section>
 
-          <div className="advanced-block">
+          <section className="panel-section advanced-block">
+            <div className="panel-section-header">
+              <h3>Selection Mode</h3>
+              <p>Switch between quick rectangle mode and custom map-drawn shapes.</p>
+            </div>
             <button
               type="button"
               className={advancedOpen ? "expanded" : ""}
@@ -153,74 +161,84 @@ function ControlPanel({
                 map to fill it.
               </p>
             </div>
-          </div>
+          </section>
 
-          <div className="energy-row">
-            <label>
-              <HelpButton
-                label="Asset type"
-                help="Pick one asset if you want one direct estimate. Pick the comparison option if you want the backend to rank the best subregions for solar, wind, and data centers."
-              />
-              <select
-                value={energyType}
-                onChange={(event) => onEnergyTypeChange(event.target.value)}
-              >
-                <option value="">Select asset</option>
-                <option value="solar">Solar panels</option>
-                <option value="wind">Wind turbines</option>
-                <option value="data_center">Data center</option>
-                <option value="infrastructure">
-                  Compare all three across the site
-                </option>
-              </select>
-            </label>
-
-            {energyType && energyType !== "infrastructure" && (
+          <section className="panel-section">
+            <div className="panel-section-header">
+              <h3>Asset Setup</h3>
+              <p>Choose what you want to build and how detailed the assumptions should be.</p>
+            </div>
+            <div className="energy-row">
               <label>
                 <HelpButton
-                  label="Specification source"
-                  help="Use a preset for a fast starting point, or custom if you already know the equipment values you want to test."
+                  label="Asset type"
+                  help="Pick one asset if you want one direct estimate. Pick the comparison option if you want the backend to rank the best subregions for solar, wind, and data centers."
                 />
                 <select
-                  value={modelMode}
-                  onChange={(event) => onModelModeChange(event.target.value)}
+                  value={energyType}
+                  onChange={(event) => onEnergyTypeChange(event.target.value)}
                 >
-                  <option value="predefined">Use a preset</option>
-                  <option value="custom">Enter custom specs</option>
+                  <option value="">Select asset</option>
+                  <option value="solar">Solar panels</option>
+                  <option value="wind">Wind turbines</option>
+                  <option value="data_center">Data center</option>
+                  <option value="infrastructure">
+                    Compare all three across the site
+                  </option>
                 </select>
               </label>
-            )}
 
-            {energyType &&
-              energyType !== "infrastructure" &&
-              modelMode === "predefined" && (
+              {energyType && energyType !== "infrastructure" && (
                 <label>
                   <HelpButton
-                    label="Preset"
-                    help="A preset fills in example equipment values so you can compare ideas without typing every input yourself."
+                    label="Specification source"
+                    help="Use a preset for a fast starting point, or custom if you already know the equipment values you want to test."
                   />
                   <select
-                    value={selectedModel}
-                    onChange={(event) =>
-                      onSelectedModelChange(event.target.value)
-                    }
+                    value={modelMode}
+                    onChange={(event) => onModelModeChange(event.target.value)}
                   >
-                    <option value="">Select preset</option>
-                    {assetPresets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label}
-                      </option>
-                    ))}
+                    <option value="predefined">Use a preset</option>
+                    <option value="custom">Enter custom specs</option>
                   </select>
                 </label>
               )}
 
-          </div>
+              {energyType &&
+                energyType !== "infrastructure" &&
+                modelMode === "predefined" && (
+                  <label>
+                    <HelpButton
+                      label="Preset"
+                      help="A preset fills in example equipment values so you can compare ideas without typing every input yourself."
+                    />
+                    <select
+                      value={selectedModel}
+                      onChange={(event) =>
+                        onSelectedModelChange(event.target.value)
+                      }
+                    >
+                      <option value="">Select preset</option>
+                      {assetPresets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+            </div>
+          </section>
 
           {energyType &&
             energyType !== "infrastructure" &&
             modelMode === "custom" && (
-              <div className="spec-grid">
+              <section className="panel-section">
+                <div className="panel-section-header">
+                  <h3>Custom Specifications</h3>
+                  <p>Fine-tune the main equipment values used by the estimate.</p>
+                </div>
+                <div className="spec-grid">
                 {assetSpecFields.map((field) => (
                   <label key={field.key}>
                     <HelpButton label={field.label} help={field.help} />
@@ -235,11 +253,17 @@ function ControlPanel({
                     />
                   </label>
                 ))}
-              </div>
+                </div>
+              </section>
             )}
 
           {(energyType === "infrastructure" || energyType === "solar") && (
-            <div className="spec-grid">
+            <section className="panel-section">
+              <div className="panel-section-header">
+                <h3>Data Sources</h3>
+                <p>Choose the live data sources the backend should use for screening.</p>
+              </div>
+              <div className="spec-grid">
               <label>
                 <HelpButton
                   label="Imagery provider"
@@ -297,31 +321,13 @@ function ControlPanel({
                 </select>
               </label>
 
-              <label>
-                <HelpButton
-                  label="Cell size (m)"
-                  help="This is the width of each scored subregion. Smaller cells give finer detail. Larger cells run faster."
-                />
-                <input
-                  type="number"
-                  min="100"
-                  max="2000"
-                  step="50"
-                  value={cellSizeMeters}
-                  onChange={(event) =>
-                    onCellSizeMetersChange(event.target.value)
-                  }
-                />
-                <small>
-                  Smaller cells give more detail but take longer to score.
-                </small>
-              </label>
-            </div>
+              </div>
+            </section>
           )}
 
           {submitError && <p className="submit-error">{submitError}</p>}
 
-          <div className="actions-row">
+          <div className="actions-row panel-section panel-actions">
             <button
               type="button"
               className="primary"
@@ -334,24 +340,18 @@ function ControlPanel({
 
           {(result?.type === "infrastructure" || result?.type === "solar_siting") && (
             <section
-              className="candidate-results"
+              className="candidate-results panel-section"
               aria-label="Infrastructure candidates"
             >
               <div className="candidate-summary">
                 <div>
                   <strong>{result.candidateCount}</strong>{" "}
                   {result.type === "solar_siting" ? "valid solar subregions" : "ranked candidates"}
-                  {result.subdivisionsEvaluated ? (
-                    <>
-                      {" "}across <strong>{result.subdivisionsEvaluated}</strong>{" "}
-                      evaluated cells
-                    </>
-                  ) : null}
                 </div>
                 <div>
                   {result.type === "solar_siting"
                     ? "These highlighted subregions passed imagery, vector, and terrain screening and were then packed with the selected solar preset."
-                    : "A higher feasibility score means the site clears more of the basic screeners for the chosen use type."}
+                    : "Each dashed outline is a buildable subregion. The shapes inside show where the selected equipment can fit."}
                 </div>
                 <div>
                   Sources: {result.dataSources.imagery},{" "}
@@ -383,7 +383,7 @@ function ControlPanel({
 
           {result && result.type !== "infrastructure" && (
             <section
-              className="asset-result-card"
+              className="asset-result-card panel-section"
               aria-label="Asset analysis result"
             >
               <div className="asset-result-header">

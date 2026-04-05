@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the global fetch API
-global.fetch = vi.fn();
+globalThis.fetch = vi.fn();
 
 const mockSolarRequest = {
   points: [
@@ -87,7 +87,7 @@ describe("API Error Handling", () => {
   });
 
   it("should handle network errors", async () => {
-    global.fetch.mockRejectedValueOnce(new Error("Network error"));
+    globalThis.fetch.mockRejectedValueOnce(new Error("Network error"));
 
     try {
       throw new Error("Network error");

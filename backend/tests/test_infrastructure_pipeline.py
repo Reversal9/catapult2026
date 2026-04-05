@@ -17,8 +17,9 @@ from infrastructure_pipeline import (
     WaterFeature,
     analyze_infrastructure_polygon,
 )
-from infrastructure.scoring import solar_candidate
-from schemas import Coordinate, InfrastructureAnalysisRequest
+from infrastructure.pipeline import _merge_solar_candidates
+from infrastructure.scoring import solar_candidate, wind_candidate
+from schemas import BoundingBox, CandidateRegion, Coordinate, InfrastructureAnalysisRequest
 
 
 class InfrastructurePipelineTests(unittest.TestCase):
@@ -60,6 +61,250 @@ class InfrastructurePipelineTests(unittest.TestCase):
         self.assertEqual(candidate.metadata["model_source"], "habakkuk")
         self.assertGreater(candidate.metadata["panel_count"], 0)
         self.assertEqual(candidate.estimated_annual_output_kwh, 456_789.0)
+
+    def test_solar_candidate_prefers_building_rooftops_when_live_buildings_exist(self) -> None:
+        cell = {
+            "id": "cell-roof",
+            "center_lat": 33.0,
+            "center_lon": -112.0,
+            "polygon": [
+                Coordinate(lat=33.0, lon=-112.0),
+                Coordinate(lat=33.0, lon=-111.996),
+                Coordinate(lat=33.004, lon=-111.996),
+                Coordinate(lat=33.004, lon=-112.0),
+            ],
+            "area_m2": 60_000.0,
+            "rooftop_area_m2": 240.0,
+            "open_land_area_m2": 1_000.0,
+            "water_ratio": 0.0,
+            "shading_factor": 0.05,
+            "slope_deg": 1.8,
+            "built_ratio": 0.12,
+            "vegetation_ratio": 0.1,
+            "unobstructed_ratio": 0.92,
+            "water_features": [],
+        }
+        buildings = [
+            BuildingFootprint(
+                polygon=[
+                    Coordinate(lat=33.0006, lon=-111.9996),
+                    Coordinate(lat=33.0006, lon=-111.9988),
+                    Coordinate(lat=33.0012, lon=-111.9988),
+                    Coordinate(lat=33.0012, lon=-111.9996),
+                    Coordinate(lat=33.0006, lon=-111.9996),
+                ],
+                bbox=BoundingBox(
+                    min_lat=33.0006,
+                    min_lon=-111.9996,
+                    max_lat=33.0012,
+                    max_lon=-111.9988,
+                ),
+                area_m2=120.0,
+            ),
+            BuildingFootprint(
+                polygon=[
+                    Coordinate(lat=33.0021, lon=-111.9983),
+                    Coordinate(lat=33.0021, lon=-111.9973),
+                    Coordinate(lat=33.0029, lon=-111.9973),
+                    Coordinate(lat=33.0029, lon=-111.9983),
+                    Coordinate(lat=33.0021, lon=-111.9983),
+                ],
+                bbox=BoundingBox(
+                    min_lat=33.0021,
+                    min_lon=-111.9983,
+                    max_lat=33.0029,
+                    max_lon=-111.9973,
+                ),
+                area_m2=150.0,
+            ),
+        ]
+
+        class StubPredictor:
+            model_name = "habakkuk"
+
+            def predict(self, **kwargs):
+                return 34_500.0, {
+                    "climate_annual_cloud_cover_pct": 16.0,
+                    "climate_annual_temperature_c": 23.0,
+                }
+
+        with patch("solar_project.get_predictor", return_value=StubPredictor()):
+            candidate = solar_candidate(cell, 7, buildings=buildings, roads=[])
+
+        self.assertIsNotNone(candidate)
+        assert candidate is not None
+        self.assertEqual(candidate.metadata["validity_source"], "rooftop_buildings")
+        self.assertEqual(len(candidate.metadata["valid_region_polygons"]), 2)
+        self.assertGreaterEqual(candidate.metadata["panel_count"], 8)
+
+    def test_rooftop_solar_panel_count_matches_rendered_layout_when_small(self) -> None:
+        cell = {
+            "id": "cell-roof-small",
+            "center_lat": 33.0,
+            "center_lon": -112.0,
+            "polygon": [
+                Coordinate(lat=33.0, lon=-112.0),
+                Coordinate(lat=33.0, lon=-111.999),
+                Coordinate(lat=33.001, lon=-111.999),
+                Coordinate(lat=33.001, lon=-112.0),
+            ],
+            "area_m2": 10_000.0,
+            "rooftop_area_m2": 220.0,
+            "open_land_area_m2": 200.0,
+            "water_ratio": 0.0,
+            "shading_factor": 0.03,
+            "slope_deg": 1.0,
+            "built_ratio": 0.2,
+            "vegetation_ratio": 0.05,
+            "unobstructed_ratio": 0.96,
+            "water_features": [],
+        }
+        buildings = [
+            BuildingFootprint(
+                polygon=[
+                    Coordinate(lat=33.0002, lon=-111.9998),
+                    Coordinate(lat=33.0002, lon=-111.9997),
+                    Coordinate(lat=33.00028, lon=-111.9997),
+                    Coordinate(lat=33.00028, lon=-111.9998),
+                    Coordinate(lat=33.0002, lon=-111.9998),
+                ],
+                bbox=BoundingBox(
+                    min_lat=33.0002,
+                    min_lon=-111.9998,
+                    max_lat=33.00028,
+                    max_lon=-111.9997,
+                ),
+                area_m2=80.0,
+            )
+        ]
+
+        candidate = solar_candidate(cell, 8, buildings=buildings, roads=[])
+
+        self.assertIsNotNone(candidate)
+        assert candidate is not None
+        self.assertEqual(candidate.metadata["validity_source"], "rooftop_buildings")
+        self.assertEqual(
+            candidate.metadata["panel_count"],
+            len(candidate.metadata["placement_polygons"]),
+        )
+        self.assertAlmostEqual(
+            candidate.metadata["packed_usable_area_m2"],
+            candidate.metadata["panel_count"] * 2.0,
+            places=2,
+        )
+
+    def test_merge_solar_candidates_keeps_rooftop_sites_separate(self) -> None:
+        rooftop_polygon_a = [
+            Coordinate(lat=33.0001, lon=-112.0000),
+            Coordinate(lat=33.0001, lon=-111.9997),
+            Coordinate(lat=33.0003, lon=-111.9997),
+            Coordinate(lat=33.0003, lon=-112.0000),
+        ]
+        rooftop_polygon_b = [
+            Coordinate(lat=33.0001, lon=-111.9995),
+            Coordinate(lat=33.0001, lon=-111.9992),
+            Coordinate(lat=33.0003, lon=-111.9992),
+            Coordinate(lat=33.0003, lon=-111.9995),
+        ]
+        candidates = [
+            CandidateRegion(
+                id="solar-1",
+                use_type="solar",
+                polygon=rooftop_polygon_a,
+                area_m2=75.0,
+                feasibility_score=84.0,
+                reasoning=["roof", "fit", "packed"],
+                estimated_annual_output_kwh=12_000.0,
+                estimated_installation_cost_usd=24_000.0,
+                metadata={
+                    "validity_source": "rooftop_buildings",
+                    "panel_count": 18,
+                    "installed_capacity_kw": 8.1,
+                    "packed_usable_area_m2": 39.24,
+                    "valid_region_polygons": [[point.model_dump() for point in rooftop_polygon_a]],
+                    "placement_polygons": [[point.model_dump() for point in rooftop_polygon_a]],
+                },
+            ),
+            CandidateRegion(
+                id="solar-2",
+                use_type="solar",
+                polygon=rooftop_polygon_b,
+                area_m2=82.0,
+                feasibility_score=82.0,
+                reasoning=["roof", "fit", "packed"],
+                estimated_annual_output_kwh=13_000.0,
+                estimated_installation_cost_usd=26_000.0,
+                metadata={
+                    "validity_source": "rooftop_buildings",
+                    "panel_count": 20,
+                    "installed_capacity_kw": 9.0,
+                    "packed_usable_area_m2": 43.6,
+                    "valid_region_polygons": [[point.model_dump() for point in rooftop_polygon_b]],
+                    "placement_polygons": [[point.model_dump() for point in rooftop_polygon_b]],
+                },
+            ),
+        ]
+
+        merged = _merge_solar_candidates(candidates, 120.0)
+
+        self.assertEqual(len(merged), 2)
+        self.assertEqual([candidate.id for candidate in merged], ["solar-1", "solar-2"])
+
+    def test_wind_candidate_excludes_the_road_corridor_from_display_polygon(self) -> None:
+        cell_bbox = BoundingBox(
+            min_lat=40.0000,
+            min_lon=-86.0000,
+            max_lat=40.0050,
+            max_lon=-85.9950,
+        )
+        cell = {
+            "id": "cell-wind",
+            "center_lat": 40.0025,
+            "center_lon": -85.9975,
+            "polygon": [
+                Coordinate(lat=40.0000, lon=-86.0000),
+                Coordinate(lat=40.0000, lon=-85.9950),
+                Coordinate(lat=40.0050, lon=-85.9950),
+                Coordinate(lat=40.0050, lon=-86.0000),
+            ],
+            "bbox": cell_bbox,
+            "area_m2": 250_000.0,
+            "built_ratio": 0.01,
+            "vegetation_ratio": 0.08,
+            "water_ratio": 0.0,
+            "unobstructed_ratio": 0.94,
+            "slope_deg": 1.3,
+            "road_distance_m": 80.0,
+            "water_features": [],
+        }
+        imagery = ImageryRaster(
+            provider="usgs",
+            source="test-raster",
+            width=24,
+            height=24,
+            bbox=cell_bbox,
+            rows=[[(120, 120, 120, 255) for _ in range(24)] for _ in range(24)],
+        )
+        road = RoadFeature(
+            points=[
+                Coordinate(lat=40.0000, lon=-85.9975),
+                Coordinate(lat=40.0050, lon=-85.9975),
+            ],
+            highway_type="primary",
+        )
+
+        candidate = wind_candidate(
+            cell,
+            3,
+            imagery=imagery,
+            buildings=[],
+            roads=[road],
+        )
+
+        self.assertIsNotNone(candidate)
+        assert candidate is not None
+        self.assertNotEqual(candidate.polygon, cell["polygon"])
+        self.assertGreater(len(candidate.metadata["valid_region_polygons"]), 0)
 
     def test_request_defaults_prefer_free_imagery_and_live_terrain(self) -> None:
         request = InfrastructureAnalysisRequest(

@@ -75,6 +75,13 @@ function MapScene({
     theme === "light"
       ? "&copy; OpenStreetMap contributors"
       : "&copy; OpenStreetMap contributors &copy; CARTO";
+  const candidatesToRender = useMemo(() => {
+    if (!result?.candidates) return [];
+    if (result.type === "solar_siting") {
+      return selectedCandidate ? [selectedCandidate] : result.candidates.slice(0, 1);
+    }
+    return result.candidates;
+  }, [result, selectedCandidate]);
 
   return (
     <div className="map-layer" aria-hidden={!landingHidden}>
@@ -120,48 +127,74 @@ function MapScene({
         )}
 
         {(result?.type === "infrastructure" || result?.type === "solar_siting") &&
-          result.candidates.map((candidate) => {
+          candidatesToRender.map((candidate) => {
             const colors = CANDIDATE_COLORS[candidate.useType];
             const isSelected = candidate.id === selectedCandidateId;
+            const placementPolygons =
+              candidate.placementPolygons?.length > 0
+                ? candidate.placementPolygons
+                : candidate.useType === "solar" && candidate.packingBlockPolygons?.length > 0
+                  ? candidate.packingBlockPolygons
+                  : [];
+            const showEnvelope =
+              candidate.useType === "data_center" || placementPolygons.length === 0 || isSelected;
             return (
               <React.Fragment key={candidate.id}>
-                {(candidate.validRegionPolygons ?? [candidate.polygon]).map(
-                  (polygon, polygonIndex) => (
-                    <Polygon
-                      key={`${candidate.id}-valid-${polygonIndex}`}
-                      positions={polygon}
-                      eventHandlers={{
-                        click: () => onSelectCandidate(candidate.id),
-                      }}
-                      pathOptions={{
-                        color: colors.stroke,
-                        weight: isSelected ? 3 : 1.6,
-                        fillColor: colors.fill,
-                        fillOpacity: isSelected
-                          ? 0.34
-                          : 0.1 + Math.min(candidate.feasibilityScore / 100, 0.22),
-                      }}
-                    />
-                  ),
-                )}
-                {candidate.useType === "solar" &&
-                  (candidate.packingBlockPolygons ?? []).map(
+                {showEnvelope &&
+                  (candidate.validRegionPolygons ?? [candidate.polygon]).map(
                     (polygon, polygonIndex) => (
                       <Polygon
-                        key={`${candidate.id}-packing-${polygonIndex}`}
+                        key={`${candidate.id}-valid-${polygonIndex}`}
                         positions={polygon}
                         eventHandlers={{
                           click: () => onSelectCandidate(candidate.id),
                         }}
                         pathOptions={{
-                          color: colors.packingStroke,
-                          weight: isSelected ? 1.6 : 1.1,
-                          fillColor: colors.packingFill,
-                          fillOpacity: isSelected ? 0.36 : 0.22,
+                          color: colors.stroke,
+                          weight: isSelected ? 2.6 : 1.2,
+                          fillColor: colors.fill,
+                          fillOpacity:
+                            candidate.useType === "data_center"
+                              ? isSelected
+                                ? 0.26
+                                : 0.12
+                              : isSelected
+                                ? 0.06
+                                : 0.02,
+                          dashArray:
+                            candidate.useType === "data_center" ? undefined : "5 6",
                         }}
                       />
                     ),
                   )}
+                {placementPolygons.map((polygon, polygonIndex) => (
+                  <Polygon
+                    key={`${candidate.id}-placement-${polygonIndex}`}
+                    positions={polygon}
+                    eventHandlers={{
+                      click: () => onSelectCandidate(candidate.id),
+                    }}
+                    pathOptions={{
+                      color:
+                        candidate.useType === "solar"
+                          ? colors.packingStroke
+                          : colors.stroke,
+                      weight: isSelected ? 1.8 : 1.2,
+                      fillColor:
+                        candidate.useType === "solar"
+                          ? colors.packingFill
+                          : colors.fill,
+                      fillOpacity:
+                        candidate.useType === "solar"
+                          ? isSelected
+                            ? 0.34
+                            : 0.24
+                          : isSelected
+                            ? 0.28
+                            : 0.18,
+                    }}
+                  />
+                ))}
               </React.Fragment>
             );
           })}
@@ -221,6 +254,8 @@ function MapScene({
             closeButton
             autoClose={false}
             closeOnClick={false}
+            autoPan
+            offset={[0, -18]}
             eventHandlers={{ remove: () => onSetStatsVisible(false) }}
           >
             {(result.type === "infrastructure" || result.type === "solar_siting") &&
@@ -232,7 +267,7 @@ function MapScene({
                   {selectedCandidate.feasibilityScore.toFixed(1)}
                 </p>
                 <p>
-                  Footprint: {(selectedCandidate.areaKm2 * 100).toFixed(2)} ha
+                  Buildable footprint: {(selectedCandidate.areaKm2 * 100).toFixed(2)} ha
                 </p>
                 <p>
                   Estimated cost: $
@@ -242,6 +277,34 @@ function MapScene({
                   <p>
                     Packed panels:{" "}
                     {selectedCandidate.metadata.panel_count.toLocaleString()}
+                  </p>
+                ) : null}
+                {selectedCandidate.metadata?.packed_usable_area_m2 ? (
+                  <p>
+                    Packed panel area:{" "}
+                    {selectedCandidate.metadata.packed_usable_area_m2.toLocaleString()} m²
+                  </p>
+                ) : null}
+                {selectedCandidate.metadata?.panel_length_m &&
+                selectedCandidate.metadata?.panel_width_m ? (
+                  <p>
+                    Panel size: {selectedCandidate.metadata.panel_length_m} m x{" "}
+                    {selectedCandidate.metadata.panel_width_m} m
+                  </p>
+                ) : null}
+                {selectedCandidate.metadata?.display_panel_count &&
+                selectedCandidate.metadata?.display_panel_count <
+                  selectedCandidate.metadata?.panel_count ? (
+                  <p>
+                    Displayed on map:{" "}
+                    {selectedCandidate.metadata.display_panel_count.toLocaleString()}{" "}
+                    sample placements
+                  </p>
+                ) : null}
+                {selectedCandidate.metadata?.turbine_count ? (
+                  <p>
+                    Turbines fitted:{" "}
+                    {selectedCandidate.metadata.turbine_count.toLocaleString()}
                   </p>
                 ) : null}
                 {selectedCandidate.metadata?.installed_capacity_kw ? (
@@ -278,14 +341,14 @@ function MapScene({
                 <p>Area: {result.areaKm2.toFixed(2)} km²</p>
                 {result.subdivisionsEvaluated ? (
                   <p>
-                    Evaluated cells:{" "}
+                    Screened analysis tiles:{" "}
                     {result.subdivisionsEvaluated.toLocaleString()}
                   </p>
                 ) : null}
                 <p>
                   {result.type === "solar_siting"
                     ? "No valid solar-ready subregions cleared the current screening settings."
-                    : "No candidate cells cleared the current feasibility thresholds."}
+                    : "No buildable subregions cleared the current screening settings."}
                 </p>
                 <p>
                   Sources: {result.dataSources.imagery},{" "}

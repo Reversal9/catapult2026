@@ -11,6 +11,8 @@ export const buildInfrastructureRequest = (region, overrides = {}) => ({
   terrain_provider: overrides.terrain_provider ?? "opentopodata",
   include_debug_layers: overrides.include_debug_layers ?? false,
   solar_spec: overrides.solar_spec,
+  wind_spec: overrides.wind_spec,
+  data_center_spec: overrides.data_center_spec,
   allowed_use_types: overrides.allowed_use_types,
 });
 

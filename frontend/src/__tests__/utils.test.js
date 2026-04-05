@@ -85,7 +85,6 @@ describe("Geographic Utilities", () => {
       const rect = rectangleFromTwoPoints(p1, p2);
       // Should use min/max of lat and lng
       const lats = rect.map((p) => p[0]);
-      const lngs = rect.map((p) => p[1]);
 
       expect(Math.min(...lats)).toBe(35);
       expect(Math.max(...lats)).toBe(45);

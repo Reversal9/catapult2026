@@ -114,6 +114,19 @@ def clip_polygon_to_bbox(points: list[Coordinate], bbox: BoundingBox) -> list[Co
     return clipped
 
 
+def _clipped_polygon_area(cell_bbox: BoundingBox, polygon: list[Coordinate]) -> float:
+    if not polygon:
+        return 0.0
+    clipped = clip_polygon_to_bbox(polygon, cell_bbox)
+    if len(clipped) < 4:
+        return 0.0
+    try:
+        area_m2, _ = polygon_area_and_centroid(clipped)
+    except ValueError:
+        return 0.0
+    return area_m2
+
+
 def bbox_overlaps(a: BoundingBox, b: BoundingBox) -> bool:
     return not (
         a.max_lat <= b.min_lat
@@ -142,6 +155,12 @@ def overlap_building_area_m2(cell_bbox: BoundingBox, building: BuildingFootprint
     except ValueError:
         return 0.0
     return area_m2
+
+
+def overlap_water_area_m2(cell_bbox: BoundingBox, water: "WaterFeature") -> float:
+    if not bbox_overlaps(cell_bbox, water.bbox):
+        return 0.0
+    return _clipped_polygon_area(cell_bbox, water.polygon)
 
 
 def distance_point_to_segment_m(point: Coordinate, start: Coordinate, end: Coordinate) -> float:

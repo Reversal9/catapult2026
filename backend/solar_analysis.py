@@ -6,7 +6,11 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from geometry import polygon_area_and_centroid
-from model_predictor import get_predictor
+try:
+    from model_predictor import get_predictor
+except Exception:  # pragma: no cover - optional ML dependency missing in tests
+    def get_predictor():
+        return None
 from schemas import Coordinate, SolarAnalysisRequest, SolarAnalysisResponse
 
 # Try to import cost module, but handle if it's not available
@@ -168,20 +172,24 @@ def analyze_solar_polygon(request: SolarAnalysisRequest) -> SolarAnalysisRespons
     # --- Energy estimate: RF model if available, physics formula as fallback ---
     predictor = get_predictor()
     if predictor is not None:
-        estimated_annual_output_kwh, climate = predictor.predict(
-            lat=centroid.lat,
-            lon=centroid.lon,
-            usable_area_m2=usable_area_m2,
-            panel_tilt_deg=request.panel_tilt_deg,
-            panel_azimuth_deg=request.panel_azimuth_deg,
-        )
-        suitability_score = _suitability_from_era5(
-            ghi_annual=sunlight_intensity_kwh_m2_yr,
-            cloud_cover_pct=climate["climate_annual_cloud_cover_pct"],
-            annual_temp_c=climate["climate_annual_temperature_c"],
-        )
-        model_source = "random-forest"
-    else:
+        try:
+            estimated_annual_output_kwh, climate = predictor.predict(
+                lat=centroid.lat,
+                lon=centroid.lon,
+                usable_area_m2=usable_area_m2,
+                panel_tilt_deg=request.panel_tilt_deg,
+                panel_azimuth_deg=request.panel_azimuth_deg,
+            )
+            suitability_score = _suitability_from_era5(
+                ghi_annual=sunlight_intensity_kwh_m2_yr,
+                cloud_cover_pct=climate["climate_annual_cloud_cover_pct"],
+                annual_temp_c=climate["climate_annual_temperature_c"],
+            )
+            model_source = getattr(predictor, "model_name", "random-forest")
+        except Exception:
+            predictor = None
+
+    if predictor is None:
         panel_efficiency = request.panel_rating_w / (1000.0 * request.panel_area_m2)
         estimated_annual_output_kwh = (
             sunlight_intensity_kwh_m2_yr

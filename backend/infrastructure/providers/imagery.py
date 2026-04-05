@@ -78,10 +78,9 @@ def fetch_usgs_imagery(bbox: BoundingBox) -> tuple[ImageryRaster | None, str, li
     notes = [
         f"USGS imagery retrieved at {width}x{height} resolution for land-cover sampling.",
     ]
-    if bbox_within_conus(bbox):
-        notes.append("USGS imagery is backed primarily by NAIP orthoimagery for CONUS requests.")
-    else:
-        notes.append("USGS imagery may fall back to broader-coverage basemap sources outside core NAIP coverage.")
+    notes.append(
+        "USGS imagery source composition varies by region; it should be treated as a live basemap input rather than assumed NAIP coverage."
+    )
 
     return (
         ImageryRaster(

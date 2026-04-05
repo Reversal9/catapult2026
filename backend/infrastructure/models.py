@@ -26,3 +26,10 @@ class BuildingFootprint:
 class RoadFeature:
     points: list[Coordinate]
     highway_type: str
+
+
+@dataclass(frozen=True)
+class WaterFeature:
+    polygon: list[Coordinate]
+    bbox: BoundingBox
+    area_m2: float

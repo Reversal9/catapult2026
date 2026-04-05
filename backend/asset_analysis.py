@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from datetime import date, timedelta
 from urllib.error import HTTPError, URLError
@@ -12,16 +13,24 @@ from schemas import (
     AssetAnalysisRequest,
     AssetAnalysisResponse,
     Coordinate,
+    DEFAULT_PANEL_AZIMUTH_DEG,
+    DEFAULT_PANEL_TILT_DEG,
     DailyGenerationPoint,
 )
+from solar_project import SolarProjectInputs, analyze_solar_project
 
 
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 MINIMUM_USEFUL_PANEL_COUNT = 12
+LOGGER = logging.getLogger("uvicorn.error")
 
 
 def clamp(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(max_value, value))
+
+
+def _log_asset_analysis_debug(payload: dict[str, object]) -> None:
+    LOGGER.info("[asset-analysis] %s", json.dumps(payload, sort_keys=True))
 
 
 def last_complete_year_period() -> tuple[str, str]:
@@ -164,69 +173,104 @@ def analyze_solar_asset(
         centroid.lat,
         centroid.lon,
     )
+    annual_radiation = sum(item["radiation_kwh_m2"] for item in daily_history)
+    estimate = analyze_solar_project(
+        SolarProjectInputs(
+            area_m2=area_m2,
+            centroid_lat=centroid.lat,
+            centroid_lon=centroid.lon,
+            panel_area_m2=spec.panel_area_m2,
+            panel_rating_w=spec.panel_rating_w,
+            panel_cost_usd=spec.panel_cost_usd,
+            construction_cost_per_m2_usd=spec.construction_cost_per_m2_usd,
+            packing_efficiency=spec.packing_efficiency,
+            performance_ratio=spec.performance_ratio,
+            sunlight_threshold_kwh_m2_yr=spec.sunlight_threshold_kwh_m2_yr,
+            panel_tilt_deg=DEFAULT_PANEL_TILT_DEG,
+            panel_azimuth_deg=DEFAULT_PANEL_AZIMUTH_DEG,
+            state=None,
+        ),
+        sunlight_intensity_kwh_m2_yr=annual_radiation,
+        weather_source=weather_source,
+        low_sunlight_reason="Past-year sunlight was below the preferred level for a high-performing solar build.",
+        low_capacity_reason="The selected region is too small for a practical solar layout with the chosen panel size.",
+        success_reason="The region has enough area and past-year sunlight to support a practical solar project.",
+    )
 
-    usable_area_m2 = area_m2 * spec.packing_efficiency
-    panel_count = int(usable_area_m2 // spec.panel_area_m2)
-    installed_capacity_kw = (panel_count * spec.panel_rating_w) / 1000.0
-    panel_efficiency = spec.panel_rating_w / (1000.0 * spec.panel_area_m2)
-
-    daily_generation = [
+    raw_daily_generation = [
         DailyGenerationPoint(
             date=item["date"],
             generation_kwh=round(
                 item["radiation_kwh_m2"]
-                * usable_area_m2
-                * panel_efficiency
+                * estimate.layout.usable_area_m2
+                * (spec.panel_rating_w / (1000.0 * spec.panel_area_m2))
                 * spec.performance_ratio,
                 2,
             ),
         )
         for item in daily_history
     ]
-    annual_output = sum(point.generation_kwh for point in daily_generation)
-    annual_radiation = sum(item["radiation_kwh_m2"] for item in daily_history)
-
-    panel_cost_usd = panel_count * spec.panel_cost_usd
-    construction_cost_usd = area_m2 * spec.construction_cost_per_m2_usd
-    total_cost_usd = panel_cost_usd + construction_cost_usd
-
-    intensity_score = clamp(
-        (annual_radiation - 1_000.0) / 700.0 * 100.0,
-        0.0,
-        100.0,
+    physics_annual_output = sum(point.generation_kwh for point in raw_daily_generation)
+    generation_scale = (
+        estimate.estimated_annual_output_kwh / physics_annual_output
+        if physics_annual_output > 0
+        else 0.0
     )
-    capacity_score = clamp(panel_count / 200.0 * 100.0, 0.0, 100.0)
-    feasibility_score = round(0.7 * intensity_score + 0.3 * capacity_score, 1)
+    daily_generation = [
+        DailyGenerationPoint(
+            date=point.date,
+            generation_kwh=round(point.generation_kwh * generation_scale, 2),
+        )
+        for point in raw_daily_generation
+    ]
 
-    reasons = []
-    if annual_radiation < spec.sunlight_threshold_kwh_m2_yr:
-        reasons.append("Past-year sunlight was below the preferred level for a high-performing solar build.")
-    if panel_count < MINIMUM_USEFUL_PANEL_COUNT:
-        reasons.append("The selected region is too small for a practical solar layout with the chosen panel size.")
-    if not reasons:
-        reasons.append("The region has enough area and past-year sunlight to support a practical solar project.")
-
-    suitable = annual_radiation >= spec.sunlight_threshold_kwh_m2_yr and panel_count >= MINIMUM_USEFUL_PANEL_COUNT
+    debug_payload: dict[str, object] = {
+        "asset_type": "solar",
+        "model_source": estimate.model_source,
+        "centroid": {
+            "lat": round(centroid.lat, 6),
+            "lon": round(centroid.lon, 6),
+        },
+        "weather_source": estimate.weather_source,
+        "annual_radiation_kwh_m2": round(annual_radiation, 2),
+        "usable_area_m2": round(estimate.layout.usable_area_m2, 2),
+        "panel_count": estimate.layout.panel_count,
+        "installed_capacity_kw": round(estimate.layout.installed_capacity_kw, 2),
+        "physics_annual_output_kwh": round(physics_annual_output, 2),
+        "estimated_annual_output_kwh": round(estimate.estimated_annual_output_kwh, 2),
+        "suitable": estimate.suitable,
+    }
+    if estimate.climate is not None:
+        debug_payload["climate"] = {
+            "annual_temperature_c": round(
+                estimate.climate["climate_annual_temperature_c"], 4
+            ),
+            "annual_cloud_cover_pct": round(
+                estimate.climate["climate_annual_cloud_cover_pct"], 4
+            ),
+        }
+    _log_asset_analysis_debug(debug_payload)
 
     return AssetAnalysisResponse(
         asset_type="solar",
         area_m2=round(area_m2, 2),
         area_km2=round(area_km2, 4),
         centroid=Coordinate(lat=centroid.lat, lon=centroid.lon),
-        asset_count=panel_count,
-        installed_capacity_kw=round(installed_capacity_kw, 2),
-        estimated_annual_output_kwh=round(annual_output, 2),
-        estimated_installation_cost_usd=round(total_cost_usd, 2),
-        feasibility_score=feasibility_score,
-        score_explanation=score_explanation(feasibility_score),
-        suitable=suitable,
-        suitability_reason=" ".join(reasons),
-        weather_source=weather_source,
+        asset_count=estimate.layout.panel_count,
+        installed_capacity_kw=round(estimate.layout.installed_capacity_kw, 2),
+        estimated_annual_output_kwh=round(estimate.estimated_annual_output_kwh, 2),
+        estimated_installation_cost_usd=round(estimate.cost.total_project_cost_usd, 2),
+        feasibility_score=estimate.suitability_score,
+        score_explanation=score_explanation(estimate.suitability_score),
+        suitable=estimate.suitable,
+        suitability_reason=estimate.suitability_reason,
+        weather_source=estimate.weather_source,
         trend_period_start=start_date,
         trend_period_end=end_date,
         daily_generation_kwh=daily_generation,
         metadata={
             "preset_name": request.preset_name,
+            "model_source": estimate.model_source,
             "panel_area_m2": spec.panel_area_m2,
             "panel_rating_w": spec.panel_rating_w,
             "panel_cost_usd": spec.panel_cost_usd,

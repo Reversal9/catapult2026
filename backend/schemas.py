@@ -63,6 +63,7 @@ class SolarAnalysisResponse(BaseModel):
     suitability_score: float
     suitable: bool
     suitability_reason: str
+    model_source: str  # "habakkuk", "physics-fallback"
 
 
 class DailyGenerationPoint(BaseModel):
@@ -159,6 +160,10 @@ class InfrastructureAnalysisRequest(BaseModel):
     ] = Field(default="auto")
     terrain_provider: Literal["opentopodata", "proxy"] = Field(default="opentopodata")
     include_debug_layers: bool = Field(default=False)
+    solar_spec: SolarAssetSpec = Field(default_factory=SolarAssetSpec)
+    allowed_use_types: list[Literal["solar", "wind", "data_center"]] = Field(
+        default_factory=lambda: ["solar", "wind", "data_center"]
+    )
 
 
 class CandidateRegion(BaseModel):
@@ -188,4 +193,4 @@ class InfrastructureAnalysisResponse(BaseModel):
     candidates: list[CandidateRegion]
     data_sources: InfrastructureDataSources
     pipeline_notes: list[str]
-    model_source: str  # "random-forest", "physics-fallback"
+    model_source: str  # backend pipeline model identifier, or "physics-fallback"

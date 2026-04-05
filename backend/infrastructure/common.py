@@ -57,7 +57,10 @@ def clamp(value: float, low: float, high: float) -> float:
 
 
 def solar_irradiance_proxy(lat: float) -> float:
-    return max(1000.0, 2050.0 - 18.0 * abs(lat))
+    # Conservative continental-scale proxy for infrastructure screening only.
+    # Keep the floor high enough that mid-latitude regions can still surface
+    # buildable candidates before the shared solar model refines output.
+    return max(1250.0, 2450.0 - 18.0 * abs(lat))
 
 
 def wind_speed_proxy(lat: float, lon: float) -> float:

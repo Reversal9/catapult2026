@@ -1,3 +1,29 @@
+/**
+ * Catapult 2026 - Main Application Component
+ *
+ * This component serves as the primary orchestrator for the renewables analysis web application.
+ *
+ * Key Responsibilities:
+ * 1. Map Management - Provides the Leaflet map interface for drawing regions
+ * 2. State Management - Manages all application state (coordinates, draw mode, analysis results)
+ * 3. Analysis Orchestration - Routes analysis requests to appropriate backend endpoints
+ * 4. UI Integration - Coordinates between ControlPanel, MapScene, and result displays
+ * 5. Theme Management - Handles light/dark theme switching
+ *
+ * Data Flow:
+ * - User draws region on map → triggers applyPolygon()
+ * - User selects analysis type (solar/asset/infrastructure)
+ * - runAnalysis() calls backend API with region + parameters
+ * - Results are mapped and displayed as overlays on map
+ *
+ * State Structure:
+ * - Geographic: p1, p2, region (polygon coordinates and bounds)
+ * - UI: theme, panelCollapsed, landingState, advancedOpen
+ * - Analysis: energyType, selectedModel, solarSpec, windSpec, dataCenterSpec
+ * - Results: result (analysis output), selectedCandidateId (for drilling down)
+ * - Interaction: searching (loading state), submitError (validation errors)
+ */
+
 import React, {
   useCallback,
   useEffect,
@@ -16,7 +42,10 @@ import TrendModal from "./components/TrendModal";
 import { ASSET_PRESETS } from "./constants/models";
 import { analyzeInfrastructureRegion } from "./lib/infrastructureAnalysisApi";
 import { mapAssetResult } from "./lib/assetResult";
-import { mapInfrastructureResult } from "./lib/infrastructureResult";
+import {
+  mapInfrastructureResult,
+  mapSolarSitingResult,
+} from "./lib/infrastructureResult";
 import {
   clamp,
   haversineMeters,
@@ -25,164 +54,79 @@ import {
   regionCenter,
 } from "./utils/geo";
 import { formatDmsPair, parseDmsPair } from "./utils/dms";
-
-const defaultSpec = (assetType) =>
-  structuredClone(ASSET_PRESETS[assetType]?.[0]?.spec ?? {});
-
-const specFieldsFor = (assetType, spec) => {
-  if (assetType === "solar") {
-    return [
-      {
-        key: "panel_area_m2",
-        label: "Panel area (m²)",
-        value: spec.panel_area_m2,
-        min: 0.1,
-        step: 0.1,
-        help: "Use the surface area of one panel module.",
-      },
-      {
-        key: "panel_rating_w",
-        label: "Panel rating (W)",
-        value: spec.panel_rating_w,
-        min: 10,
-        step: 5,
-        help: "Nameplate output for one panel.",
-      },
-      {
-        key: "panel_cost_usd",
-        label: "Panel cost ($)",
-        value: spec.panel_cost_usd,
-        min: 1,
-        step: 1,
-        help: "Hardware cost for one panel before construction work.",
-      },
-      {
-        key: "packing_efficiency",
-        label: "Packing efficiency",
-        value: spec.packing_efficiency,
-        min: 0.1,
-        step: 0.01,
-        help: "Share of the site that can actually hold panels after spacing and setbacks.",
-      },
-    ];
-  }
-  if (assetType === "wind") {
-    return [
-      {
-        key: "turbine_rating_kw",
-        label: "Turbine rating (kW)",
-        value: spec.turbine_rating_kw,
-        min: 100,
-        step: 100,
-        help: "Nameplate rating for one turbine.",
-      },
-      {
-        key: "turbine_cost_usd",
-        label: "Turbine cost ($)",
-        value: spec.turbine_cost_usd,
-        min: 10000,
-        step: 10000,
-        help: "Installed hardware cost per turbine.",
-      },
-      {
-        key: "spacing_area_m2",
-        label: "Spacing area (m²)",
-        value: spec.spacing_area_m2,
-        min: 1000,
-        step: 1000,
-        help: "Average land area needed to safely space one turbine.",
-      },
-      {
-        key: "minimum_viable_wind_speed_mps",
-        label: "Minimum wind speed (m/s)",
-        value: spec.minimum_viable_wind_speed_mps,
-        min: 1,
-        step: 0.1,
-        help: "Below this level the turbine is treated as a weak fit.",
-      },
-    ];
-  }
-  return [
-    {
-      key: "power_density_kw_per_m2",
-      label: "Power density (kW/m²)",
-      value: spec.power_density_kw_per_m2,
-      min: 0.001,
-      step: 0.001,
-      help: "IT load that each square meter of built floor area can support.",
-    },
-    {
-      key: "construction_cost_per_m2_usd",
-      label: "Shell cost ($/m²)",
-      value: spec.construction_cost_per_m2_usd,
-      min: 1,
-      step: 1,
-      help: "Core building cost before server and power equipment fit-out.",
-    },
-    {
-      key: "fit_out_cost_per_kw_usd",
-      label: "Fit-out cost ($/kW)",
-      value: spec.fit_out_cost_per_kw_usd,
-      min: 1,
-      step: 10,
-      help: "Electrical and cooling build cost per delivered IT kilowatt.",
-    },
-  ];
-};
+import { defaultSpec, specFieldsFor } from "./utils/assetSpecs";
 
 function App() {
   const mapRef = useRef(null);
   const popupRef = useRef(null);
 
+  // === Theme and UI State ===
   const [theme, setTheme] = useState("light");
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [landingState, setLandingState] = useState("visible");
+  const [landingState, setLandingState] = useState("visible"); // visible → fading → hidden
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [activeCoordField, setActiveCoordField] = useState(null);
+  const [activeCoordField, setActiveCoordField] = useState(null); // null or "p1" or "p2"
   const [userMovedMap, setUserMovedMap] = useState(false);
 
-  const [p1, setP1] = useState({ lat: 43.7238, lng: -80.194 });
-  const [p2, setP2] = useState({ lat: 43.6118, lng: -80.0706 });
+  // === Geographic State ===
+  // Two reference points for bounding rectangle
+  const [p1, setP1] = useState({ lat: 40.446, lng: -86.945 });
+  const [p2, setP2] = useState({ lat: 40.425, lng: -86.865 });
+  
+  // Text representation of coordinates (for display and editing)
   const [p1Text, setP1Text] = useState(
-    formatDmsPair({ lat: 43.7238, lng: -80.194 }),
+    formatDmsPair({ lat: 40.446, lng: -86.945 }),
   );
   const [p2Text, setP2Text] = useState(
-    formatDmsPair({ lat: 43.6118, lng: -80.0706 }),
+    formatDmsPair({ lat: 40.425, lng: -86.865 }),
   );
+  
+  // Error messages for coordinate validation
   const [p1Error, setP1Error] = useState("");
   const [p2Error, setP2Error] = useState("");
 
-  const [drawMode, setDrawMode] = useState("circle");
-  const [draftPoints, setDraftPoints] = useState([]);
+  // === Drawing State ===
+  const [drawMode, setDrawMode] = useState("circle"); // rectangle, circle, polygon
+  const [draftPoints, setDraftPoints] = useState([]); // Points being drafted for polygon
   const [region, setRegion] = useState({
     type: "polygon",
     points: rectangleFromTwoPoints(
-      { lat: 43.7238, lng: -80.194 },
-      { lat: 43.6118, lng: -80.0706 },
+      { lat: 40.446, lng: -86.945 },
+      { lat: 40.425, lng: -86.865 },
     ),
     source: "rectangle",
   });
 
+  // === Analysis Parameters ===
   const [energyType, setEnergyType] = useState("");
   const [modelMode, setModelMode] = useState("predefined");
   const [selectedModel, setSelectedModel] = useState("");
   const [imageryProvider, setImageryProvider] = useState("usgs");
   const [segmentationBackend, setSegmentationBackend] = useState("auto");
+  const [terrainProvider, setTerrainProvider] = useState("opentopodata");
   const [cellSizeMeters, setCellSizeMeters] = useState(300);
+  
+  // Solar/wind/data-center specifications (for custom analysis)
   const [solarSpec, setSolarSpec] = useState(defaultSpec("solar"));
   const [windSpec, setWindSpec] = useState(defaultSpec("wind"));
   const [dataCenterSpec, setDataCenterSpec] = useState(
     defaultSpec("data_center"),
   );
 
-  const [submitError, setSubmitError] = useState("");
-  const [searching, setSearching] = useState(false);
+  // === Results and Interaction State ===
+  const [submitError, setSubmitError] = useState(""); // Validation errors
+  const [searching, setSearching] = useState(false); // Loading indicator
   const [statsVisible, setStatsVisible] = useState(false);
-  const [result, setResult] = useState(null);
-  const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+  const [result, setResult] = useState(null); // Analysis result from backend
+  const [selectedCandidateId, setSelectedCandidateId] = useState(null); // For drilling into specific site
   const [trendOpen, setTrendOpen] = useState(false);
 
+  // === Landing Screen Animation ===
+  /**
+   * Triggers transition from landing screen to app.
+   * Fades out overlay and enables interactions.
+   */
   const enterApp = useCallback(() => {
     if (landingState !== "visible") return;
     setLandingState("fading");
@@ -196,6 +140,10 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [enterApp, landingState]);
 
+  /**
+   * Apply a coordinate update to either p1 or p2.
+   * Validates format and updates both decimal and text representations.
+   */
   const applyCoord = (id, coord) => {
     const next = {
       lat: clamp(coord.lat, -89.999, 89.999),
@@ -381,13 +329,44 @@ function App() {
         const infrastructureResult = await analyzeInfrastructureRegion(region, {
           imagery_provider: imageryProvider,
           segmentation_backend: segmentationBackend,
+          terrain_provider: terrainProvider,
           cell_size_m: cellSizeMeters,
+          solar_spec: solarSpec,
+          allowed_use_types: ["solar", "wind", "data_center"],
         });
         const mappedResult = mapInfrastructureResult(infrastructureResult, {
           imageryProvider,
           segmentationBackend,
+          terrainProvider,
           cellSizeMeters,
         });
+        setSelectedCandidateId(mappedResult.candidates[0]?.id ?? null);
+        setResult(mappedResult);
+        setTrendOpen(false);
+      } else if (energyType === "solar") {
+        const infrastructureResult = await analyzeInfrastructureRegion(region, {
+          imagery_provider: imageryProvider,
+          segmentation_backend: segmentationBackend,
+          terrain_provider: terrainProvider,
+          cell_size_m: cellSizeMeters,
+          solar_spec: solarSpec,
+          allowed_use_types: ["solar"],
+        });
+        const presetName =
+          modelMode === "predefined"
+            ? (assetPresets.find((preset) => preset.id === selectedModel)?.label ??
+                null)
+            : "Custom specification";
+        const mappedResult = mapSolarSitingResult(
+          infrastructureResult,
+          {
+            imageryProvider,
+            segmentationBackend,
+            terrainProvider,
+            cellSizeMeters,
+          },
+          { presetName },
+        );
         setSelectedCandidateId(mappedResult.candidates[0]?.id ?? null);
         setResult(mappedResult);
         setTrendOpen(false);
@@ -429,7 +408,7 @@ function App() {
   };
 
   const activeInfrastructureCandidate = useMemo(() => {
-    if (result?.type !== "infrastructure") return null;
+    if (!result?.candidates) return null;
     return (
       result.candidates.find(
         (candidate) => candidate.id === selectedCandidateId,
@@ -529,6 +508,7 @@ function App() {
           assetPresets={assetPresets}
           imageryProvider={imageryProvider}
           segmentationBackend={segmentationBackend}
+          terrainProvider={terrainProvider}
           cellSizeMeters={cellSizeMeters}
           onEnergyTypeChange={(nextType) => {
             setEnergyType(nextType);
@@ -567,6 +547,7 @@ function App() {
           }}
           onImageryProviderChange={setImageryProvider}
           onSegmentationBackendChange={setSegmentationBackend}
+          onTerrainProviderChange={setTerrainProvider}
           onCellSizeMetersChange={(value) => {
             const numeric = Number(value);
             if (Number.isNaN(numeric)) {

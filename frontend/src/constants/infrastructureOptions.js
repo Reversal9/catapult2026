@@ -12,3 +12,8 @@ export const INFRASTRUCTURE_SEGMENTATION_OPTIONS = [
   { value: "unet", label: "U-Net service" },
   { value: "mask_rcnn", label: "Mask R-CNN service" },
 ];
+
+export const INFRASTRUCTURE_TERRAIN_PROVIDERS = [
+  { value: "opentopodata", label: "OpenTopoData (Free)" },
+  { value: "proxy", label: "Terrain proxy fallback" },
+];

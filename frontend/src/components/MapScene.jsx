@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   Circle,
   MapContainer,
@@ -10,11 +10,14 @@ import {
 } from "react-leaflet";
 import MapEvents from "./MapEvents";
 import { markerIcon } from "../map/icons";
+import { rectangleFromTwoPoints } from "../utils/geo";
 
 const CANDIDATE_COLORS = {
   solar: {
-    stroke: "#cc7a1b",
-    fill: "#f4c86b",
+    stroke: "#b42318",
+    fill: "#ef4444",
+    packingStroke: "#7f1d1d",
+    packingFill: "#dc2626",
   },
   wind: {
     stroke: "#2d83b7",
@@ -48,6 +51,22 @@ function MapScene({
   landingHidden,
   theme,
 }) {
+  const [dragPreview, setDragPreview] = useState(null);
+
+  const previewP1 = dragPreview?.p1 ?? p1;
+  const previewP2 = dragPreview?.p2 ?? p2;
+  const displayedRegion = useMemo(() => {
+    if (!dragPreview) {
+      return region;
+    }
+
+    return {
+      type: "polygon",
+      points: rectangleFromTwoPoints(previewP1, previewP2),
+      source: "rectangle",
+    };
+  }, [dragPreview, previewP1, previewP2, region]);
+
   const tilesUrl =
     theme === "light"
       ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -59,9 +78,9 @@ function MapScene({
 
   return (
     <div className="map-layer" aria-hidden={!landingHidden}>
-      <MapContainer
-        className="map-canvas"
-        center={[43.67, -80.13]}
+        <MapContainer
+          className="map-canvas"
+          center={[40.4259, -86.9081]}
         zoom={10}
         zoomControl
         scrollWheelZoom
@@ -75,10 +94,10 @@ function MapScene({
         />
         <MapEvents onMapClick={onMapClick} onMapMove={onMapMove} />
 
-        {region.type === "circle" ? (
+        {displayedRegion.type === "circle" ? (
           <Circle
-            center={[region.center.lat, region.center.lng]}
-            radius={region.radiusMeters}
+            center={[displayedRegion.center.lat, displayedRegion.center.lng]}
+            radius={displayedRegion.radiusMeters}
             eventHandlers={{ click: () => result && onToggleStats() }}
             pathOptions={{
               color: "#1b7d67",
@@ -89,7 +108,7 @@ function MapScene({
           />
         ) : (
           <Polygon
-            positions={region.points}
+            positions={displayedRegion.points}
             eventHandlers={{ click: () => result && onToggleStats() }}
             pathOptions={{
               color: "#1b7d67",
@@ -100,26 +119,50 @@ function MapScene({
           />
         )}
 
-        {result?.type === "infrastructure" &&
+        {(result?.type === "infrastructure" || result?.type === "solar_siting") &&
           result.candidates.map((candidate) => {
             const colors = CANDIDATE_COLORS[candidate.useType];
             const isSelected = candidate.id === selectedCandidateId;
             return (
-              <Polygon
-                key={candidate.id}
-                positions={candidate.polygon}
-                eventHandlers={{
-                  click: () => onSelectCandidate(candidate.id),
-                }}
-                pathOptions={{
-                  color: colors.stroke,
-                  weight: isSelected ? 3 : 1.6,
-                  fillColor: colors.fill,
-                  fillOpacity: isSelected
-                    ? 0.34
-                    : 0.1 + Math.min(candidate.feasibilityScore / 100, 0.22),
-                }}
-              />
+              <React.Fragment key={candidate.id}>
+                {(candidate.validRegionPolygons ?? [candidate.polygon]).map(
+                  (polygon, polygonIndex) => (
+                    <Polygon
+                      key={`${candidate.id}-valid-${polygonIndex}`}
+                      positions={polygon}
+                      eventHandlers={{
+                        click: () => onSelectCandidate(candidate.id),
+                      }}
+                      pathOptions={{
+                        color: colors.stroke,
+                        weight: isSelected ? 3 : 1.6,
+                        fillColor: colors.fill,
+                        fillOpacity: isSelected
+                          ? 0.34
+                          : 0.1 + Math.min(candidate.feasibilityScore / 100, 0.22),
+                      }}
+                    />
+                  ),
+                )}
+                {candidate.useType === "solar" &&
+                  (candidate.packingBlockPolygons ?? []).map(
+                    (polygon, polygonIndex) => (
+                      <Polygon
+                        key={`${candidate.id}-packing-${polygonIndex}`}
+                        positions={polygon}
+                        eventHandlers={{
+                          click: () => onSelectCandidate(candidate.id),
+                        }}
+                        pathOptions={{
+                          color: colors.packingStroke,
+                          weight: isSelected ? 1.6 : 1.1,
+                          fillColor: colors.packingFill,
+                          fillOpacity: isSelected ? 0.36 : 0.22,
+                        }}
+                      />
+                    ),
+                  )}
+              </React.Fragment>
             );
           })}
 
@@ -131,22 +174,42 @@ function MapScene({
         )}
 
         <Marker
-          position={[p1.lat, p1.lng]}
+          position={[previewP1.lat, previewP1.lng]}
           icon={markerIcon("#4ab394")}
           draggable
           eventHandlers={{
-            drag: (event) => onApplyCoord("p1", event.target.getLatLng()),
-            dragend: (event) => onApplyCoord("p1", event.target.getLatLng()),
+            dragstart: () => {
+              setDragPreview({ p1, p2 });
+            },
+            drag: (event) =>
+              setDragPreview((current) => ({
+                p1: event.target.getLatLng(),
+                p2: current?.p2 ?? p2,
+              })),
+            dragend: (event) => {
+              setDragPreview(null);
+              onApplyCoord("p1", event.target.getLatLng());
+            },
             click: onLandingInteraction,
           }}
         />
         <Marker
-          position={[p2.lat, p2.lng]}
+          position={[previewP2.lat, previewP2.lng]}
           icon={markerIcon("#c09244")}
           draggable
           eventHandlers={{
-            drag: (event) => onApplyCoord("p2", event.target.getLatLng()),
-            dragend: (event) => onApplyCoord("p2", event.target.getLatLng()),
+            dragstart: () => {
+              setDragPreview({ p1, p2 });
+            },
+            drag: (event) =>
+              setDragPreview((current) => ({
+                p1: current?.p1 ?? p1,
+                p2: event.target.getLatLng(),
+              })),
+            dragend: (event) => {
+              setDragPreview(null);
+              onApplyCoord("p2", event.target.getLatLng());
+            },
             click: onLandingInteraction,
           }}
         />
@@ -160,7 +223,8 @@ function MapScene({
             closeOnClick={false}
             eventHandlers={{ remove: () => onSetStatsVisible(false) }}
           >
-            {result.type === "infrastructure" && selectedCandidate ? (
+            {(result.type === "infrastructure" || result.type === "solar_siting") &&
+            selectedCandidate ? (
               <div className="result-popup">
                 <h3>{selectedCandidate.useLabel} Candidate</h3>
                 <p>
@@ -174,6 +238,19 @@ function MapScene({
                   Estimated cost: $
                   {selectedCandidate.estimatedInstallationCostUsd.toLocaleString()}
                 </p>
+                {selectedCandidate.metadata?.panel_count ? (
+                  <p>
+                    Packed panels:{" "}
+                    {selectedCandidate.metadata.panel_count.toLocaleString()}
+                  </p>
+                ) : null}
+                {selectedCandidate.metadata?.installed_capacity_kw ? (
+                  <p>
+                    Installed capacity:{" "}
+                    {selectedCandidate.metadata.installed_capacity_kw.toLocaleString()}{" "}
+                    kW
+                  </p>
+                ) : null}
                 {selectedCandidate.estimatedAnnualOutputKwh && (
                   <p>
                     Estimated output:{" "}
@@ -185,6 +262,9 @@ function MapScene({
                 )}
                 <p>{selectedCandidate.reasoning[0]}</p>
                 <p>{selectedCandidate.reasoning[1]}</p>
+                {selectedCandidate.reasoning[2] ? (
+                  <p>{selectedCandidate.reasoning[2]}</p>
+                ) : null}
                 <p>
                   Sources: {result.dataSources.imagery},{" "}
                   {result.dataSources.vector_data},{" "}
@@ -192,16 +272,20 @@ function MapScene({
                   {result.dataSources.terrain}
                 </p>
               </div>
-            ) : result.type === "infrastructure" ? (
+            ) : result.type === "infrastructure" || result.type === "solar_siting" ? (
               <div className="result-popup">
                 <h3>{result.label}</h3>
                 <p>Area: {result.areaKm2.toFixed(2)} km²</p>
+                {result.subdivisionsEvaluated ? (
+                  <p>
+                    Evaluated cells:{" "}
+                    {result.subdivisionsEvaluated.toLocaleString()}
+                  </p>
+                ) : null}
                 <p>
-                  Evaluated cells:{" "}
-                  {result.subdivisionsEvaluated.toLocaleString()}
-                </p>
-                <p>
-                  No candidate cells cleared the current feasibility thresholds.
+                  {result.type === "solar_siting"
+                    ? "No valid solar-ready subregions cleared the current screening settings."
+                    : "No candidate cells cleared the current feasibility thresholds."}
                 </p>
                 <p>
                   Sources: {result.dataSources.imagery},{" "}

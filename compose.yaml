@@ -13,8 +13,6 @@ services:
           action: rebuild
     environment:
       PYTHONUNBUFFERED: 1
-    env_file:
-      - path: .env
 
     restart: always
     ports:

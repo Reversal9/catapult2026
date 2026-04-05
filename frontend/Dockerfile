@@ -5,11 +5,9 @@ COPY package*.json ./
 
 # ---------- Prod stage ----------
 FROM base AS prod
-ENV NODE_ENV=production
-
-RUN npm install
+# Set this AFTER npm install if you want to keep devDependencies during build
+RUN npm install 
 COPY . .
 
 EXPOSE 5173
-
 CMD ["npm", "run", "dev", "--", "--host"]

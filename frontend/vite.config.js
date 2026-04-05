@@ -4,7 +4,16 @@ import react from "@vitejs/plugin-react";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: process.env.VITE_BASE_PATH || "/",
+  base: "/",
+  server: {
+    // Allows the server to be accessible outside the container
+    host: true, 
+    // This solves the "Blocked request" error for AWS/EC2 hostnames
+    allowedHosts: true, 
+    hmr: {
+	clientPort: 80
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",
